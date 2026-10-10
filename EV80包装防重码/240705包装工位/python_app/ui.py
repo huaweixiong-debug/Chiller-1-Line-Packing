@@ -107,14 +107,14 @@ if QApplication is not None:
     class StatusLamp(QFrame):
         def __init__(self, title: str):
             super().__init__()
-            self.setMinimumSize(132, 118)
+            self.setMinimumSize(126, 112)
             layout = QVBoxLayout(self)
-            layout.setContentsMargins(8, 7, 8, 7)
+            layout.setContentsMargins(8, 6, 8, 6)
             layout.setSpacing(3)
             self.title_label = QLabel(title)
             self.title_label.setAlignment(Qt.AlignCenter)
             self.lamp = QLabel()
-            self.lamp.setFixedSize(68, 68)
+            self.lamp.setFixedSize(56, 56)
             self.lamp.setAlignment(Qt.AlignCenter)
             self.value_label = QLabel("待查询")
             self.value_label.setAlignment(Qt.AlignCenter)
@@ -127,7 +127,7 @@ if QApplication is not None:
             colors = {"idle": "#94a3b8", "success": "#22c55e", "error": "#dc2626"}
             color = colors.get(state, colors["idle"])
             self.lamp.setStyleSheet(
-                f"background:{color}; border:3px solid #ffffff; border-radius:34px;"
+                f"background:{color}; border:3px solid #ffffff; border-radius:28px;"
                 " padding:0;"
             )
             self.value_label.setText(value)
@@ -168,7 +168,7 @@ if QApplication is not None:
             self.rework_mode = False
             self._last_warned_at = None
             self.setWindowTitle(config.station_name)
-            self.setMinimumSize(1200, 760)
+            self.setMinimumSize(1200, 830)
             self._build_ui()
             self.completion_timer = QTimer(self)
             self.completion_timer.setSingleShot(True)
@@ -260,7 +260,7 @@ if QApplication is not None:
             lamp_grid = QGridLayout(); lamp_grid.setSpacing(8)
             for index, title in enumerate(("烘干", "干检", "氦检", "清洗", "包装完成", "重复包装")):
                 card = StatusLamp(title); self.status_lamps[title] = card
-                lamp_grid.addWidget(card, index // 2, index % 2)
+                lamp_grid.addWidget(card, index // 3, index % 3)
             left_layout.addLayout(lamp_grid, 1)
             alert_row = QHBoxLayout()
             self.alert_lamp = QLabel(); self.alert_lamp.setFixedSize(24, 24)
@@ -283,12 +283,12 @@ if QApplication is not None:
                 from .chery_qr import PARTS
                 chery_box = QFrame()
                 chery_box.setObjectName("panel")
-                chery_form = QFormLayout(chery_box)
-                chery_form.setContentsMargins(8, 6, 8, 6)
-                chery_form.setSpacing(4)
-                title = QLabel("奇瑞 KD 标签（可选）")
-                title.setObjectName("sectionTitle")
-                chery_form.addRow(title)
+                chery_row = QHBoxLayout(chery_box)
+                chery_row.setContentsMargins(8, 4, 8, 4)
+                chery_row.setSpacing(6)
+                chery_title = QLabel("奇瑞 KD")
+                chery_title.setObjectName("sectionTitle")
+                chery_row.addWidget(chery_title)
                 self.chery_part_combo = QComboBox()
                 for part in PARTS:
                     self.chery_part_combo.addItem(
@@ -296,13 +296,15 @@ if QApplication is not None:
                 idx = self.chery_part_combo.findData(self.config.chery.part_no)
                 if idx >= 0:
                     self.chery_part_combo.setCurrentIndex(idx)
+                chery_row.addWidget(self.chery_part_combo, 2)
                 self.chery_batch_edit = QLineEdit(self.config.chery.batch)
                 self.chery_batch_edit.setPlaceholderText("发运批次")
+                chery_row.addWidget(QLabel("批次"))
+                chery_row.addWidget(self.chery_batch_edit, 2)
                 self.chery_layers_edit = QLineEdit(self.config.chery.layers)
-                self.chery_layers_edit.setPlaceholderText("码放层数")
-                chery_form.addRow("零件", self.chery_part_combo)
-                chery_form.addRow("发运批次", self.chery_batch_edit)
-                chery_form.addRow("码放层数", self.chery_layers_edit)
+                self.chery_layers_edit.setPlaceholderText("层数")
+                chery_row.addWidget(QLabel("层数"))
+                chery_row.addWidget(self.chery_layers_edit, 1)
                 self.chery_part_combo.currentIndexChanged.connect(self._sync_chery_fields)
                 self.chery_batch_edit.textChanged.connect(self._sync_chery_fields)
                 self.chery_layers_edit.textChanged.connect(self._sync_chery_fields)
