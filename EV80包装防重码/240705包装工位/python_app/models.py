@@ -19,20 +19,28 @@ class WorkflowState(str, Enum):
     ERROR_BLOCKED = "ERROR_BLOCKED"
 
 
-@dataclass(frozen=True)
-class FieldMap:
-    dry_test: int = 3
-    nitrogen_test: int = 7
-    package_gate: int = 9
-    station: int = 22
-    customer_code: int = 23
-    box_code: int = 24
-    drying_date: int = 17
+@dataclass
+class ColumnMap:
+    """information 表的列名映射，现场表结构随产品变化时只改配置。"""
+    code: str = "上线码"
+    time: str = "测试时间"
+    dry_result: str = "干检结果"
+    helium_result: str = "氦检结果"
+    box: str = "装箱码"
+    model: str = "产品型号"
+
+
+@dataclass
+class CheckSwitches:
+    """装箱前的审核开关。本产品只有干检数据，只启用干检与重码审核。"""
+    dry_test: bool = True
+    helium: bool = False
+    duplicate: bool = True
 
 
 @dataclass
 class StationConfig:
-    db_host: str = "192.168.3.140"
+    db_host: str = "192.168.3.100"
     db_port: int = 3306
     db_user: str = "root"
     db_password: str = ""
@@ -47,7 +55,7 @@ class StationConfig:
     scanner_stopbits: int = 1
     scanner_timeout: float = 5.0
     serial_length: int = 22
-    customer_min_length: int = 26
+    pack_min_length: int = 26
     scanner_trigger: bytes = b"LON\r"
     bartend_exe: str = r"C:\Program Files\Seagull\BarTender Suite\bartend.exe"
     label_template: str = r"D:\Label.btw"
@@ -60,32 +68,26 @@ class StationConfig:
     station_name: str = "包装工位"
     admin_username: str = "admin"
     admin_password: str = "admin123"
-    field_map: FieldMap = field(default_factory=FieldMap)
+    columns: ColumnMap = field(default_factory=ColumnMap)
+    checks: CheckSwitches = field(default_factory=CheckSwitches)
 
 
 @dataclass
 class InspectionResult:
     scan_code: str
     mode: str
-    rows: list[tuple[Any, ...]] = field(default_factory=list)
-    station: str = ""
+    rows: list[dict[str, Any]] = field(default_factory=list)
+    model: str = ""
     dry_test: str = ""
-    nitrogen_test: str = ""
-    customer_code: str = ""
+    helium_test: str = ""
     box_code: str = ""
-    package_gate: str = ""
     online_count: int = 0
-    customer_count: int = 0
-    has_customer_code: bool = False
     already_boxed: bool = False
     is_duplicate: bool = False
     duplicate_source: str = ""
     can_package: bool = False
     reason: str = ""
     checked_at: datetime = field(default_factory=datetime.now)
-    drying_status: str = ""
-    helium_test: str = ""
-    cleaning_status: str = ""
 
 
 @dataclass

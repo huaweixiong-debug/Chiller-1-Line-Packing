@@ -43,6 +43,14 @@ def load_config(path: str | os.PathLike[str] | None = None) -> StationConfig:
             setattr(cfg, target, _expand(str(paths[source])))
     if "station_name" in app:
         cfg.station_name = str(app["station_name"])
+    if "pack_min_length" in app:
+        cfg.pack_min_length = int(app["pack_min_length"])
+    for name, value in raw.get("columns", {}).items():
+        if hasattr(cfg.columns, name):
+            setattr(cfg.columns, name, str(value))
+    for name, value in raw.get("checks", {}).items():
+        if hasattr(cfg.checks, name):
+            setattr(cfg.checks, name, bool(value))
     admin = raw.get("admin", {})
     if "username" in admin:
         cfg.admin_username = str(admin["username"])

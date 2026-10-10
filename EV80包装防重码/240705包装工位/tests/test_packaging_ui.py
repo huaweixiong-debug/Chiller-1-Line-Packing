@@ -23,8 +23,11 @@ def test_classify_scan_routes_by_length():
     config = StationConfig()
     assert classify_scan("1" * config.serial_length, config) == "serial"
     assert classify_scan("1" * (config.serial_length - 1), config) == "serial"
-    assert classify_scan("C" * config.customer_min_length, config) == "customer"
-    assert classify_scan("C" * (config.customer_min_length + 3), config) == "customer"
+    assert classify_scan("C" * config.pack_min_length, config) == "customer"
+    assert classify_scan("C" * (config.pack_min_length + 3), config) == "customer"
+
+    site_config = StationConfig(pack_min_length=22)
+    assert classify_scan("E130025100202610100990", site_config) == "customer"
 
 
 def test_product_slot_turns_green_when_filled():

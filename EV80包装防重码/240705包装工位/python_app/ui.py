@@ -33,7 +33,7 @@ def slot_grid_positions(size: int = PACKAGE_SIZE) -> list[tuple[int, int]]:
 
 def classify_scan(code: str, config: StationConfig) -> str:
     """按条码长度区分类型：达到客户码最小长度按客户码包装，否则按流水码查询。"""
-    return "customer" if len(code) >= config.customer_min_length else "serial"
+    return "customer" if len(code) >= config.pack_min_length else "serial"
 
 
 if QApplication is not None:
@@ -231,19 +231,17 @@ if QApplication is not None:
             top_grid.setVerticalSpacing(5)
             self.box_sequence = self._field("箱码序号", "—", read_only=True)
             self.pack_count = self._field("包装累计", "0", read_only=True)
-            self.station_number = self._field("烘干工位号", "—", read_only=True)
+            self.model_field = self._field("产品型号", "—", read_only=True)
             self.current_box = self._field("当前箱码", "—", read_only=True)
-            self.online_count = self._field("上线码数量", "—", read_only=True)
-            self.customer_count = self._field("客户码数量", "—", read_only=True)
-            self.customer_scan = self._field("扫码结果（客户码）-包装用", "请输入客户码")
+            self.online_count = self._field("检测记录数", "—", read_only=True)
+            self.customer_scan = self._field("扫码结果（上线码）-包装用", "请输入 22 位上线码")
             self.serial_scan = self._field("扫码结果（流水码）-仅查询", "请输入 22 位流水码")
             top_grid.addWidget(self.box_sequence[0], 0, 0); top_grid.addWidget(self.box_sequence[1], 0, 1)
             top_grid.addWidget(self.pack_count[0], 0, 2); top_grid.addWidget(self.pack_count[1], 0, 3)
-            top_grid.addWidget(self.station_number[0], 0, 4); top_grid.addWidget(self.station_number[1], 0, 5)
+            top_grid.addWidget(self.model_field[0], 0, 4); top_grid.addWidget(self.model_field[1], 0, 5)
             top_grid.addWidget(self.customer_scan[0], 0, 6); top_grid.addWidget(self.customer_scan[1], 0, 7, 1, 3)
             top_grid.addWidget(self.current_box[0], 1, 0); top_grid.addWidget(self.current_box[1], 1, 1)
             top_grid.addWidget(self.online_count[0], 1, 2); top_grid.addWidget(self.online_count[1], 1, 3)
-            top_grid.addWidget(self.customer_count[0], 1, 4); top_grid.addWidget(self.customer_count[1], 1, 5)
             top_grid.addWidget(self.serial_scan[0], 1, 6); top_grid.addWidget(self.serial_scan[1], 1, 7, 1, 3)
             top_grid.setColumnStretch(7, 2)
             layout.addWidget(top)
@@ -270,7 +268,7 @@ if QApplication is not None:
             alert_row.addWidget(self.alert_lamp); alert_row.addWidget(self.alert_text, 1)
             left_layout.addLayout(alert_row)
             self.progress = QProgressBar(); self.progress.setRange(0, PACKAGE_SIZE); self.progress.setFormat("0 / 12"); left_layout.addWidget(self.progress)
-            self.details = QLabel("干检：—   氦检：—   客户码：—   箱码：—"); left_layout.addWidget(self.details)
+            self.details = QLabel("干检：—   氦检：—   型号：—   箱码：—"); left_layout.addWidget(self.details)
             self.retry = QPushButton("检查恢复状态"); self.retry.clicked.connect(self._recovery); left_layout.addWidget(self.retry)
             control_row = QHBoxLayout(); control_row.setSpacing(8)
             self.rework_toggle = QPushButton("回退模式：关"); self.rework_toggle.setObjectName("reworkToggle")
@@ -378,10 +376,9 @@ if QApplication is not None:
                 QMessageBox.warning(self, "不允许装箱", snapshot.message)
             if snapshot.last_result:
                 result = snapshot.last_result
-                self.station_number[1].setText(result.station or "—")
+                self.model_field[1].setText(result.model or "—")
                 self.online_count[1].setText(str(result.online_count or "—"))
-                self.customer_count[1].setText(str(result.customer_count or "—"))
-                self.details.setText(f"干检：{result.dry_test or '—'}   氦检：{result.helium_test or result.nitrogen_test or '—'}   客户码：{'有' if result.has_customer_code else '无'}   箱码：{result.box_code or '未包装'}")
+                self.details.setText(f"干检：{result.dry_test or '—'}   氦检：{result.helium_test or '—'}   型号：{result.model or '—'}   箱码：{result.box_code or '未包装'}")
             if snapshot.state is WorkflowState.ERROR_BLOCKED:
                 self.scan_gate.resolve(False); self._set_input_enabled(False); self.retry.setEnabled(True); self._set_alert("error", snapshot.message); return
             if snapshot.box_completed:
@@ -401,13 +398,17 @@ if QApplication is not None:
             for lamp in self.status_lamps.values(): lamp.set_state("idle", "待查询")
             result = snapshot.last_result
             if result:
-                self.status_lamps["烘干"].set_state("success" if result.rows else "idle", "已完成" if result.rows else "待查询")
-                self._set_result_lamp("干检", result.dry_test)
-                self._set_result_lamp("氦检", result.helium_test or result.nitrogen_test)
-                self._set_result_lamp("清洗", result.cleaning_status)
+                self.status_lamps["烘干"].set_state("idle", "未启用")
+                self._set_check_lamp("干检", result.dry_test, self.config.checks.dry_test)
+                self._set_check_lamp("氦检", result.helium_test, self.config.checks.helium)
+                self.status_lamps["清洗"].set_state("idle", "未启用")
                 if result.already_boxed: self.status_lamps["包装完成"].set_state("success", "已包装")
                 if result.is_duplicate: self.status_lamps["重复包装"].set_state("error", "重码")
             if snapshot.box_completed: self.status_lamps["包装完成"].set_state("success", "已完成")
+
+        def _set_check_lamp(self, title: str, value: str, enabled: bool) -> None:
+            if not enabled: self.status_lamps[title].set_state("idle", "未启用"); return
+            self._set_result_lamp(title, value)
 
         def _set_result_lamp(self, title: str, value: str) -> None:
             normalized = (value or "").strip().upper()

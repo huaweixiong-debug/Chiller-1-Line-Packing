@@ -65,12 +65,12 @@ class LegacyStateStore:
         self._atomic_write(self.config.box_sequence_file, str(current + 1))
 
     def write_print_files(self, box_code: str, products: list[str]) -> None:
-        """按旧系统约定写 BarTender 标签数据文件：装箱激光码0~11.txt + 数量 + 最终箱码。"""
+        """按现场约定写 BarTender 标签数据文件：装箱上线码0~11.txt + 数量 + 最终箱码。"""
         if len(products) != PACKAGE_SIZE:
-            raise StateStoreError(f"打印前需要 {PACKAGE_SIZE} 个激光码，实际 {len(products)} 个")
+            raise StateStoreError(f"打印前需要 {PACKAGE_SIZE} 个上线码，实际 {len(products)} 个")
         laser_root = Path(self.config.laser_archive_dir).parent
         for index, code in enumerate(products):
-            self._atomic_write(str(laser_root / f"装箱激光码{index}.txt"), code)
+            self._atomic_write(str(laser_root / f"装箱上线码{index}.txt"), code)
         self._atomic_write(self.config.quantity_file, str(len(products)))
         self._atomic_write(self.config.final_box_file, box_code)
 

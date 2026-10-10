@@ -26,64 +26,86 @@ class FakeConn:
     def __init__(self, rows=()): self.cursor_obj = FakeCursor(rows); self.committed = False
     def __enter__(self): return self
     def __exit__(self, *args): pass
-    def cursor(self): return self.cursor_obj
+    def cursor(self, *args, **kwargs): return self.cursor_obj
     def commit(self): self.committed = True
     def close(self): pass
 
 
 def test_inspection_uses_parameterized_query():
-    conn = FakeConn([("x", "", "", "OK", "", "", "", "OK", "", "laser", *([""] * 12), "station", "customer", "")])
+    conn = FakeConn([{"上线码": "x", "测试时间": "2026/10/10 10:00:00", "干检结果": "OK",
+                      "氦检结果": "", "装箱码": "", "产品型号": "E109"}])
     repo = InspectionRepository(StationConfig(), connector=lambda **kwargs: conn)
     result = repo.inspect_serial("a' OR 1=1")
     assert result.can_package is True
+    assert result.dry_test == "OK"
     assert conn.cursor_obj.executed[0][1] == ("a' OR 1=1",)
 
 
 def test_inspection_marks_existing_box_as_database_duplicate():
-    row = [""] * 25
-    row[3], row[7], row[9] = "OK", "OK", "gate"
-    row[22], row[23], row[24] = "station", "CUSTOMER-CODE", "OLD-BOX-001"
-    conn = FakeConn([tuple(row)])
-    result = InspectionRepository(StationConfig(), connector=lambda **kwargs: conn).inspect_customer("LASER")
+    conn = FakeConn([{"上线码": "CODE", "测试时间": "2026/10/10 10:00:00", "干检结果": "OK",
+                      "氦检结果": "OK", "装箱码": "OLD-BOX-001", "产品型号": "E109"}])
+    result = InspectionRepository(StationConfig(), connector=lambda **kwargs: conn).inspect_customer("CODE")
     assert result.can_package is False
     assert result.is_duplicate is True
     assert result.duplicate_source == "database"
+    assert result.already_boxed is True
     assert "OLD-BOX-001" in result.reason
 
 
-def test_inspect_customer_blocks_missing_drying_or_checks():
-    def make_repo(row):
-        return InspectionRepository(StationConfig(), connector=lambda **kwargs: FakeConn([tuple(row)]))
+def test_inspect_blocks_only_enabled_checks():
+    def make_repo(row, helium=False):
+        config = StationConfig()
+        config.checks.helium = helium
+        return InspectionRepository(config, connector=lambda **kwargs: FakeConn([row]))
 
-    row = [""] * 25
-    row[3], row[7] = "OK", "OK"
-    row[17] = "2026-09-09 05:10:38"
-    row[23] = "CUSTOMER-CODE"
-    ok_result = make_repo(row).inspect_customer("LASER")
+    def row(dry="OK", helium=""):
+        return {"上线码": "CODE", "测试时间": "2026/10/10 10:00:00", "干检结果": dry,
+                "氦检结果": helium, "装箱码": "", "产品型号": "E109"}
+
+    ok_result = make_repo(row()).inspect_customer("CODE")
     assert ok_result.can_package is True
-    assert ok_result.reason == "客户码校验通过"
+    assert ok_result.reason == "校验通过"
+    assert ok_result.model == "E109"
 
-    row[17] = ""
-    no_drying = make_repo(row).inspect_customer("LASER")
-    assert no_drying.can_package is False
-    assert "无烘干记录" in no_drying.reason
+    helium_ignored = make_repo(row(helium="NG")).inspect_customer("CODE")
+    assert helium_ignored.can_package is True
 
-    row[17] = "2026-09-09 05:10:38"
-    row[3] = "NG"
-    bad_dry = make_repo(row).inspect_customer("LASER")
+    bad_dry = make_repo(row(dry="NG")).inspect_customer("CODE")
     assert bad_dry.can_package is False
     assert "干检未通过（NG）" in bad_dry.reason
 
-    row[3] = ""
-    no_dry_check = make_repo(row).inspect_customer("LASER")
-    assert no_dry_check.can_package is False
-    assert "干检未完成（无记录）" in no_dry_check.reason
+    no_dry = make_repo(row(dry="")).inspect_customer("CODE")
+    assert no_dry.can_package is False
+    assert "干检未完成（无记录）" in no_dry.reason
 
-    row[3] = "OK"
-    row[7] = ""
-    bad_helium = make_repo(row).inspect_customer("LASER")
-    assert bad_helium.can_package is False
-    assert "氦检未完成（无记录）" in bad_helium.reason
+    helium_enabled = make_repo(row(helium=""), helium=True).inspect_customer("CODE")
+    assert helium_enabled.can_package is False
+    assert "氦检未完成（无记录）" in helium_enabled.reason
+
+
+def test_inspection_returns_missing_code_reason():
+    repo = InspectionRepository(StationConfig(), connector=lambda **kwargs: FakeConn([]))
+    result = repo.inspect_serial("CODE")
+    assert result.can_package is False
+    assert "未查询到上线码" in result.reason
+
+
+def test_update_box_codes_writes_box_column_by_code():
+    conn = FakeConn([])
+    repo = InspectionRepository(StationConfig(), connector=lambda **kwargs: conn)
+    repo.update_box_codes("2026101000012", ["CODE-A", "CODE-B"])
+    executed = conn.cursor_obj.executed
+    assert [args for _, args in executed] == [("2026101000012", "CODE-A"), ("2026101000012", "CODE-B")]
+    assert all("`装箱码`=%s" in sql and "`上线码`=%s" in sql for sql, _ in executed)
+    assert conn.committed is True
+
+
+def test_release_from_box_clears_matching_box_only():
+    conn = FakeConn([])
+    repo = InspectionRepository(StationConfig(), connector=lambda **kwargs: conn)
+    assert repo.release_from_box("CODE-A", "2026101000012") is True
+    sql, args = conn.cursor_obj.executed[0]
+    assert "SET `装箱码`=%s" in sql and args == ("", "CODE-A", "2026101000012")
 
 
 def test_config_loads_admin_credentials(tmp_path):
@@ -135,8 +157,8 @@ def test_state_store_writes_print_files_for_bartender(tmp_path):
     store.write_print_files("2026090925810", products)
     root = tmp_path
     for index in range(PACKAGE_SIZE):
-        assert (root / f"装箱激光码{index}.txt").read_text(encoding="mbcs") == f"LASER-{index:02d}"
-    assert not (root / "装箱激光码12.txt").exists()
+        assert (root / f"装箱上线码{index}.txt").read_text(encoding="mbcs") == f"LASER-{index:02d}"
+    assert not (root / "装箱上线码12.txt").exists()
     assert (root / "数量.txt").read_text(encoding="mbcs") == "12"
     assert (root / "最终.txt").read_text(encoding="mbcs") == "2026090925810"
     store.advance_box_sequence()
@@ -285,9 +307,8 @@ class MemoryRepository:
                                     reason="该产品已经包装，原箱码：OLD001")
         if code == "INVALID":
             return InspectionResult(code, "customer", reason="工序未通过")
-        return InspectionResult(code, "customer", dry_test="OK", nitrogen_test="OK",
-                                customer_code="CUSTOMER-CODE", has_customer_code=True,
-                                can_package=True, reason="客户码校验通过")
+        return InspectionResult(code, "customer", dry_test="OK", helium_test="OK",
+                                can_package=True, reason="校验通过")
     def update_box_codes(self, box_code, products): self.updates.append((box_code, list(products)))
     def release_from_box(self, code, expected_box):
         self.released.append((code, expected_box))

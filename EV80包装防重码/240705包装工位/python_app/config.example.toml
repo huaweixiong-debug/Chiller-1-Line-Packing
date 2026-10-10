@@ -1,5 +1,5 @@
 [database]
-host = "192.168.3.140"
+host = "192.168.3.100"
 port = 3306
 user = "root"
 name = "test"
@@ -27,3 +27,20 @@ journal_file = "%ProgramData%/PackagingStation/box_journal.json"
 
 [app]
 station_name = "包装工位"
+# 达到该长度的扫码按“装箱”处理，否则只查询
+pack_min_length = 22
+
+# information 表的列名映射（现场表结构变化时只改这里）
+[columns]
+code = "上线码"
+time = "测试时间"
+dry_result = "干检结果"
+helium_result = "氦检结果"
+box = "装箱码"
+model = "产品型号"
+
+# 装箱审核开关；本产品只有干检数据，只启用干检与重码
+[checks]
+dry_test = true
+helium = false
+duplicate = true
