@@ -53,22 +53,27 @@ def test_inspection_marks_existing_box_as_database_duplicate():
 
 
 def test_inspect_blocks_only_enabled_checks():
-    def make_repo(row, helium=False):
+    def make_repo(row, helium=False, tightening=False):
         config = StationConfig()
         config.checks.helium = helium
+        config.checks.tightening = tightening
         return InspectionRepository(config, connector=lambda **kwargs: FakeConn([row]))
 
-    def row(dry="OK", helium=""):
+    def row(dry="OK", helium="", tightening="OK"):
         return {"上线码": "CODE", "测试时间": "2026/10/10 10:00:00", "干检结果": dry,
-                "氦检结果": helium, "装箱码": "", "产品型号": "E109"}
+                "氦检结果": helium, "拧紧结果": tightening, "装箱码": "", "产品型号": "E109"}
 
     ok_result = make_repo(row()).inspect_customer("CODE")
     assert ok_result.can_package is True
     assert ok_result.reason == "校验通过"
     assert ok_result.model == "E109"
+    assert ok_result.tightening_test == "OK"
 
     helium_ignored = make_repo(row(helium="NG")).inspect_customer("CODE")
     assert helium_ignored.can_package is True
+
+    tightening_ignored = make_repo(row(tightening="NG")).inspect_customer("CODE")
+    assert tightening_ignored.can_package is True
 
     bad_dry = make_repo(row(dry="NG")).inspect_customer("CODE")
     assert bad_dry.can_package is False
@@ -81,6 +86,10 @@ def test_inspect_blocks_only_enabled_checks():
     helium_enabled = make_repo(row(helium=""), helium=True).inspect_customer("CODE")
     assert helium_enabled.can_package is False
     assert "氦检未完成（无记录）" in helium_enabled.reason
+
+    tightening_enabled = make_repo(row(tightening="NG"), tightening=True).inspect_customer("CODE")
+    assert tightening_enabled.can_package is False
+    assert "拧紧未通过（NG）" in tightening_enabled.reason
 
 
 def test_inspection_returns_missing_code_reason():

@@ -26,15 +26,17 @@ class ColumnMap:
     time: str = "测试时间"
     dry_result: str = "干检结果"
     helium_result: str = "氦检结果"
+    tightening_result: str = "拧紧结果"
     box: str = "装箱码"
     model: str = "产品型号"
 
 
 @dataclass
 class CheckSwitches:
-    """装箱前的审核开关。本产品只有干检数据，只启用干检与重码审核。"""
+    """装箱审核开关。当前只激活干检核验，氦检/拧紧仅显示不阻断。"""
     dry_test: bool = True
     helium: bool = False
+    tightening: bool = False
     duplicate: bool = True
 
 
@@ -94,6 +96,7 @@ class InspectionResult:
     model: str = ""
     dry_test: str = ""
     helium_test: str = ""
+    tightening_test: str = ""
     box_code: str = ""
     online_count: int = 0
     already_boxed: bool = False

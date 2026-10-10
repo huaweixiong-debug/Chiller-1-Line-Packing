@@ -258,7 +258,7 @@ if QApplication is not None:
             left_layout.addWidget(self.status)
             self.status_lamps = {}
             lamp_grid = QGridLayout(); lamp_grid.setSpacing(6)
-            for index, title in enumerate(("烘干", "干检", "氦检", "清洗", "包装完成", "重复包装")):
+            for index, title in enumerate(("干检", "氦检", "拧紧", "包装完成", "重复包装")):
                 card = StatusLamp(title); self.status_lamps[title] = card
                 lamp_grid.addWidget(card, index // 3, index % 3)
             left_layout.addLayout(lamp_grid, 1)
@@ -268,7 +268,7 @@ if QApplication is not None:
             alert_row.addWidget(self.alert_lamp); alert_row.addWidget(self.alert_text, 1)
             left_layout.addLayout(alert_row)
             progress_row = QHBoxLayout(); progress_row.setSpacing(8)
-            self.details = QLabel("干检：—   氦检：—   型号：—   箱码：—")
+            self.details = QLabel("型号：—   箱码：—")
             progress_row.addWidget(self.details, 3)
             self.progress = QProgressBar(); self.progress.setRange(0, PACKAGE_SIZE); self.progress.setFormat("0 / 12")
             progress_row.addWidget(self.progress, 2)
@@ -425,7 +425,7 @@ if QApplication is not None:
                 result = snapshot.last_result
                 self.model_field[1].setText(result.model or "—")
                 self.online_count[1].setText(str(result.online_count or "—"))
-                self.details.setText(f"干检：{result.dry_test or '—'}   氦检：{result.helium_test or '—'}   型号：{result.model or '—'}   箱码：{result.box_code or '未包装'}")
+                self.details.setText(f"型号：{result.model or '—'}   箱码：{result.box_code or '未包装'}")
             if snapshot.state is WorkflowState.ERROR_BLOCKED:
                 self.scan_gate.resolve(False); self._set_input_enabled(False); self.retry.setEnabled(True); self._set_alert("error", snapshot.message); return
             if snapshot.box_completed:
@@ -445,22 +445,22 @@ if QApplication is not None:
             for lamp in self.status_lamps.values(): lamp.set_state("idle", "待查询")
             result = snapshot.last_result
             if result:
-                self.status_lamps["烘干"].set_state("idle", "未启用")
-                self._set_check_lamp("干检", result.dry_test, self.config.checks.dry_test)
-                self._set_check_lamp("氦检", result.helium_test, self.config.checks.helium)
-                self.status_lamps["清洗"].set_state("idle", "未启用")
+                self._set_result_lamp("干检", result.dry_test, active=self.config.checks.dry_test)
+                self._set_result_lamp("氦检", result.helium_test, active=self.config.checks.helium)
+                self._set_result_lamp("拧紧", result.tightening_test, active=self.config.checks.tightening)
                 if result.already_boxed: self.status_lamps["包装完成"].set_state("success", "已包装")
                 if result.is_duplicate: self.status_lamps["重复包装"].set_state("error", "重码")
             if snapshot.box_completed: self.status_lamps["包装完成"].set_state("success", "已完成")
 
-        def _set_check_lamp(self, title: str, value: str, enabled: bool) -> None:
-            if not enabled: self.status_lamps[title].set_state("idle", "未启用"); return
-            self._set_result_lamp(title, value)
-
-        def _set_result_lamp(self, title: str, value: str) -> None:
+        def _set_result_lamp(self, title: str, value: str, active: bool = True) -> None:
+            """active=True 的工序参与阻断核验（红色=拦截）；active=False 只显示结果。"""
             normalized = (value or "").strip().upper()
-            if normalized == "OK": self.status_lamps[title].set_state("success", "通过")
-            elif normalized: self.status_lamps[title].set_state("error", value)
+            if normalized == "OK":
+                self.status_lamps[title].set_state("success", "通过")
+            elif normalized:
+                self.status_lamps[title].set_state("error" if active else "idle", value)
+            else:
+                self.status_lamps[title].set_state("idle", "无记录")
 
         def _set_alert(self, level: str, text: str) -> None:
             color = {"normal": "#94a3b8", "success": "#22c55e", "error": "#dc2626"}[level]
