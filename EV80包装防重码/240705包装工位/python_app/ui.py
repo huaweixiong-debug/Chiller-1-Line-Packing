@@ -72,9 +72,9 @@ if QApplication is not None:
             super().__init__()
             self.number = number
             self.product_code = ""
-            self.setMinimumHeight(36)
+            self.setMinimumHeight(26)
             layout = QHBoxLayout(self)
-            layout.setContentsMargins(10, 3, 10, 3)
+            layout.setContentsMargins(10, 1, 10, 1)
             self.number_label = QLabel(f"{number:02d}")
             self.number_label.setFixedWidth(34)
             self.code_label = QLabel("等待扫码")
@@ -107,14 +107,14 @@ if QApplication is not None:
     class StatusLamp(QFrame):
         def __init__(self, title: str):
             super().__init__()
-            self.setMinimumSize(126, 112)
+            self.setMinimumSize(104, 78)
             layout = QVBoxLayout(self)
-            layout.setContentsMargins(8, 6, 8, 6)
-            layout.setSpacing(3)
+            layout.setContentsMargins(6, 3, 6, 3)
+            layout.setSpacing(2)
             self.title_label = QLabel(title)
             self.title_label.setAlignment(Qt.AlignCenter)
             self.lamp = QLabel()
-            self.lamp.setFixedSize(56, 56)
+            self.lamp.setFixedSize(38, 38)
             self.lamp.setAlignment(Qt.AlignCenter)
             self.value_label = QLabel("待查询")
             self.value_label.setAlignment(Qt.AlignCenter)
@@ -127,7 +127,7 @@ if QApplication is not None:
             colors = {"idle": "#94a3b8", "success": "#22c55e", "error": "#dc2626"}
             color = colors.get(state, colors["idle"])
             self.lamp.setStyleSheet(
-                f"background:{color}; border:3px solid #ffffff; border-radius:28px;"
+                f"background:{color}; border:2px solid #ffffff; border-radius:21px;"
                 " padding:0;"
             )
             self.value_label.setText(value)
@@ -168,7 +168,7 @@ if QApplication is not None:
             self.rework_mode = False
             self._last_warned_at = None
             self.setWindowTitle(config.station_name)
-            self.setMinimumSize(1200, 830)
+            self.setMinimumSize(1024, 660)
             self._build_ui()
             self.completion_timer = QTimer(self)
             self.completion_timer.setSingleShot(True)
@@ -253,11 +253,11 @@ if QApplication is not None:
             body.setSpacing(12)
             layout.addLayout(body, 1)
             left = QFrame(); left.setObjectName("panel")
-            left_layout = QVBoxLayout(left); left_layout.setContentsMargins(10, 10, 10, 10); left_layout.setSpacing(8)
+            left_layout = QVBoxLayout(left); left_layout.setContentsMargins(10, 8, 10, 8); left_layout.setSpacing(6)
             self.status = QLabel("系统启动中"); self.status.setObjectName("status"); self.status.setAlignment(Qt.AlignCenter); self.status.setWordWrap(True)
             left_layout.addWidget(self.status)
             self.status_lamps = {}
-            lamp_grid = QGridLayout(); lamp_grid.setSpacing(8)
+            lamp_grid = QGridLayout(); lamp_grid.setSpacing(6)
             for index, title in enumerate(("烘干", "干检", "氦检", "清洗", "包装完成", "重复包装")):
                 card = StatusLamp(title); self.status_lamps[title] = card
                 lamp_grid.addWidget(card, index // 3, index % 3)
@@ -267,14 +267,18 @@ if QApplication is not None:
             self.alert_text = QLabel("扫码状态正常")
             alert_row.addWidget(self.alert_lamp); alert_row.addWidget(self.alert_text, 1)
             left_layout.addLayout(alert_row)
-            self.progress = QProgressBar(); self.progress.setRange(0, PACKAGE_SIZE); self.progress.setFormat("0 / 12"); left_layout.addWidget(self.progress)
-            self.details = QLabel("干检：—   氦检：—   型号：—   箱码：—"); left_layout.addWidget(self.details)
-            self.retry = QPushButton("检查恢复状态"); self.retry.clicked.connect(self._recovery); left_layout.addWidget(self.retry)
+            progress_row = QHBoxLayout(); progress_row.setSpacing(8)
+            self.details = QLabel("干检：—   氦检：—   型号：—   箱码：—")
+            progress_row.addWidget(self.details, 3)
+            self.progress = QProgressBar(); self.progress.setRange(0, PACKAGE_SIZE); self.progress.setFormat("0 / 12")
+            progress_row.addWidget(self.progress, 2)
+            left_layout.addLayout(progress_row)
             control_row = QHBoxLayout(); control_row.setSpacing(8)
+            self.retry = QPushButton("检查恢复"); self.retry.clicked.connect(self._recovery)
             self.rework_toggle = QPushButton("回退模式：关"); self.rework_toggle.setObjectName("reworkToggle")
             self.rework_toggle.setCheckable(True); self.rework_toggle.toggled.connect(self._toggle_rework)
             self.reset_button = QPushButton("复位本箱"); self.reset_button.clicked.connect(self._reset_box)
-            control_row.addWidget(self.rework_toggle); control_row.addWidget(self.reset_button)
+            control_row.addWidget(self.retry); control_row.addWidget(self.rework_toggle); control_row.addWidget(self.reset_button)
             left_layout.addLayout(control_row)
             self.chery_part_combo = None
             self.chery_batch_edit = None
@@ -313,7 +317,7 @@ if QApplication is not None:
             body.addWidget(left, 0, 0)
 
             right = QFrame(); right.setObjectName("panel")
-            right_layout = QVBoxLayout(right); right_layout.setContentsMargins(10, 10, 10, 10); right_layout.setSpacing(7)
+            right_layout = QVBoxLayout(right); right_layout.setContentsMargins(8, 8, 8, 8); right_layout.setSpacing(4)
             right_layout.addWidget(QLabel("装箱产品（固定 12 件）"))
             self.product_slots = [ProductSlot(index + 1) for index in range(PACKAGE_SIZE)]
             for slot, (row, column) in zip(self.product_slots, slot_grid_positions()):
