@@ -149,7 +149,10 @@ if QApplication is not None:
             )
             self.scanner = ScannerService(
                 config.scanner_host, config.scanner_port, config.scanner_timeout,
-                config.serial_length, config.scanner_trigger,
+                config.serial_length, config.scanner_trigger, mode=config.scanner_mode,
+                com_port=config.scanner_com_port, baudrate=config.scanner_baudrate,
+                bytesize=config.scanner_bytesize, parity=config.scanner_parity,
+                stopbits=config.scanner_stopbits,
             )
             self.scanner_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scanner-worker")
             self.scanner_stop = threading.Event()

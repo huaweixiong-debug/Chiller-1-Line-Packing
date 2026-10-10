@@ -95,6 +95,24 @@ def test_config_loads_admin_credentials(tmp_path):
     assert cfg.admin_password == "secret"
 
 
+def test_config_loads_scanner_serial_settings(tmp_path):
+    from python_app.config import load_config
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        '[scanner]\nmode = "serial"\ncom_port = "COM2"\nbaudrate = 4800\n'
+        'bytesize = 7\nparity = "E"\nstopbits = 2\ntimeout = 3.5\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(cfg_file)
+    assert cfg.scanner_mode == "serial"
+    assert cfg.scanner_com_port == "COM2"
+    assert cfg.scanner_baudrate == 4800
+    assert cfg.scanner_bytesize == 7
+    assert cfg.scanner_parity == "E"
+    assert cfg.scanner_stopbits == 2
+    assert cfg.scanner_timeout == 3.5
+
+
 def test_state_store_box_code_and_atomic_archive(tmp_path):
     cfg = StationConfig(quantity_file=str(tmp_path / "数量.txt"), final_box_file=str(tmp_path / "最终.txt"), box_sequence_file=str(tmp_path / "序号.txt"), laser_archive_dir=str(tmp_path / "archive"), journal_file=str(tmp_path / "journal.json"))
     (tmp_path / "数量.txt").write_text("not-a-number", encoding="utf-8")
@@ -187,6 +205,54 @@ def test_scanner_returns_on_terminator_without_connection_close():
     assert frame.code == "10067057111109260908000215"
     assert elapsed < 1.5
     assert frame.mode == "serial"
+
+
+def test_scanner_serial_mode_reads_from_com_port(monkeypatch):
+    import sys
+    import types
+
+    payload = bytearray(b"10067057111109260908000215\r\n")
+    written = []
+
+    class FakeSerial:
+        def __init__(self, port, baudrate, bytesize, parity, stopbits, timeout):
+            self.port, self.baudrate, self.bytesize = port, baudrate, bytesize
+            self.parity, self.stopbits, self.timeout = parity, stopbits, timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def write(self, data):
+            written.append((self.port, data))
+
+        def flush(self):
+            pass
+
+        def read(self, size):
+            if not payload:
+                return b""
+            chunk = bytes(payload[:size])
+            del payload[:size]
+            return chunk
+
+        def close(self):
+            pass
+
+    fake = types.ModuleType("serial")
+    fake.Serial = FakeSerial
+    monkeypatch.setitem(sys.modules, "serial", fake)
+
+    service = ScannerService("127.0.0.1", 0, timeout=2, trigger_command=b"LON\r",
+                             mode="serial", com_port="COM1", baudrate=9600)
+    frame = service.read_once()
+
+    assert frame.code == "10067057111109260908000215"
+    assert frame.mode == "serial"
+    assert service.last_online is True
+    assert written == [("COM1", b"LON\r")]
 
 
 class MemoryStore:

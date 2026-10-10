@@ -21,6 +21,8 @@ py -3.12 --version
 
 正式运行前，将 `python_app/config.example.toml` 复制为 `%ProgramData%\PackagingStation\config.toml`，通过 `PACKAGING_DB_PASSWORD` 提供数据库密码，并在目标现场电脑核对 BarTender、标签模板和 D 盘状态文件。
 
+扫码枪既可走 TCP（`mode = "tcp"`，填 `host`/`port`），也可直接接串口（`mode = "serial"`，填 `com_port`/`baudrate`，串口模式需要 `pyserial`，启动脚本会自动安装）。
+
 ## 测试与打包
 
 ```powershell

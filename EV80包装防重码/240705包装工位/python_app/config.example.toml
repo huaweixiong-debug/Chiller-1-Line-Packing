@@ -6,9 +6,16 @@ name = "test"
 password_env = "PACKAGING_DB_PASSWORD"
 
 [scanner]
+mode = "tcp"
 host = "192.168.3.69"
 port = 9004
 timeout = 5.0
+# mode = "serial" 时改用下面这些串口参数（扫码枪接在现场电脑 COM 口上）
+com_port = "COM1"
+baudrate = 9600
+bytesize = 8
+parity = "N"
+stopbits = 1
 
 [paths]
 bartend_exe = "C:/Program Files/Seagull/BarTender Suite/bartend.exe"

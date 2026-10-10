@@ -37,8 +37,14 @@ class StationConfig:
     db_user: str = "root"
     db_password: str = ""
     db_name: str = "test"
+    scanner_mode: str = "tcp"
     scanner_host: str = "192.168.3.69"
     scanner_port: int = 9004
+    scanner_com_port: str = "COM1"
+    scanner_baudrate: int = 9600
+    scanner_bytesize: int = 8
+    scanner_parity: str = "N"
+    scanner_stopbits: int = 1
     scanner_timeout: float = 5.0
     serial_length: int = 22
     customer_min_length: int = 26

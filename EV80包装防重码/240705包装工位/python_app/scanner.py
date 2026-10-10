@@ -54,14 +54,21 @@ class ScanGate:
 
 class ScannerService:
     def __init__(self, host: str, port: int, timeout: float = 5.0, serial_length: int = 22,
-                 trigger_command: bytes = b"LON\r"):
+                 trigger_command: bytes = b"LON\r", mode: str = "tcp", com_port: str = "COM1",
+                 baudrate: int = 9600, bytesize: int = 8, parity: str = "N", stopbits: int = 1):
         self.host, self.port, self.timeout, self.serial_length = host, port, timeout, serial_length
         self.trigger_command = trigger_command
+        self.mode = (mode or "tcp").strip().lower()
+        self.com_port, self.baudrate = com_port, baudrate
+        self.bytesize, self.parity, self.stopbits = bytesize, parity, stopbits
         self.last_online = False
         self._stop = threading.Event()
         self._sock: socket.socket | None = None
+        self._serial: object | None = None
 
     def read_once(self, expected_length: int | None = None) -> ScanFrame:
+        if self.mode == "serial":
+            return self._read_serial(expected_length)
         try:
             sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
         except OSError as exc:
@@ -112,3 +119,56 @@ class ScannerService:
                 self._sock.close()
             except OSError:
                 pass
+        if self._serial is not None:
+            try:
+                self._serial.close()
+            except OSError:
+                pass
+
+    def _read_serial(self, expected_length: int | None = None) -> ScanFrame:
+        try:
+            import serial
+        except ImportError as exc:
+            self.last_online = False
+            raise ScannerError("串口扫码需要 pyserial，请执行: pip install pyserial") from exc
+        try:
+            port = serial.Serial(port=self.com_port, baudrate=self.baudrate, bytesize=self.bytesize,
+                                 parity=self.parity, stopbits=self.stopbits, timeout=self.timeout)
+        except (OSError, ValueError) as exc:
+            self.last_online = False
+            raise ScannerError(f"扫码器串口打开失败({self.com_port}): {exc}") from exc
+        self.last_online = True
+        try:
+            self._serial = port
+            with port:
+                if self.trigger_command:
+                    port.write(self.trigger_command)
+                    port.flush()
+                chunks = bytearray()
+                got_data = False
+                while not self._stop.is_set():
+                    data = port.read(1)
+                    if not data:
+                        if got_data:
+                            break
+                        raise ScannerError("扫码器未返回数据")
+                    chunks.extend(data)
+                    if not got_data:
+                        got_data = True
+                        port.timeout = 0.35
+                    if chunks[-1] in (0x0A, 0x0D):
+                        break
+                    if expected_length and len(chunks) >= expected_length:
+                        break
+                if not chunks:
+                    raise ScannerError("扫码器未返回数据")
+                code = bytes(chunks).decode("utf-8", errors="replace").strip("\x00\r\n \t")
+                if not code:
+                    raise ScannerError("扫码器未返回有效数据")
+                return ScanFrame(code, "serial")
+        except ScannerError:
+            raise
+        except (OSError, UnicodeError) as exc:
+            raise ScannerError(f"扫码器通信失败: {exc}") from exc
+        finally:
+            self._serial = None

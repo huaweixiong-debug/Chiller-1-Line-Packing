@@ -66,10 +66,10 @@ Get-ChildItem -LiteralPath $sourceApp -File | ForEach-Object {
 Push-Location $runtimeRoot
 try {
     $ErrorActionPreference = "Continue"
-    & $python @pythonPrefix -c "from PySide6.QtWidgets import QApplication; import pymysql" 2>$null
+    & $python @pythonPrefix -c "from PySide6.QtWidgets import QApplication; import pymysql; import serial" 2>$null
     if ($LASTEXITCODE -ne 0) {
         if (-not $Silent) { Write-Host "Installing required Python packages..." -ForegroundColor Cyan }
-        $runtimePackages = @("PySide6-Essentials>=6.8,<7", "PyMySQL>=1.1,<2")
+        $runtimePackages = @("PySide6-Essentials>=6.8,<7", "PyMySQL>=1.1,<2", "pyserial>=3.5,<4")
         & $python @pythonPrefix -m pip install @runtimePackages
         if ($LASTEXITCODE -ne 0) {
             throw "Python package installation failed"
