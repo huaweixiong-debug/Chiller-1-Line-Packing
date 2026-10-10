@@ -11,6 +11,17 @@ from .models import BoxSession, FinalizationJournal, PACKAGE_SIZE, StationConfig
 class StateStoreError(RuntimeError):
     pass
 
+def _text_encoding() -> str:
+    """现场 Windows 用 mbcs；非 Windows 回退 gbk，便于 Linux 测试。"""
+    try:
+        import codecs
+        codecs.lookup("mbcs")
+        return "mbcs"
+    except LookupError:
+        return "gbk"
+
+
+
 
 class LegacyStateStore:
     def __init__(self, config: StationConfig):
@@ -21,7 +32,7 @@ class LegacyStateStore:
     @staticmethod
     def _read(path: str, default: str | None = None) -> str:
         try:
-            return Path(path).read_text(encoding="mbcs").strip()
+            return Path(path).read_text(encoding=_text_encoding()).strip()
         except FileNotFoundError:
             if default is not None:
                 return default
@@ -35,7 +46,7 @@ class LegacyStateStore:
         target.parent.mkdir(parents=True, exist_ok=True)
         fd, temp = tempfile.mkstemp(prefix=target.name + ".", dir=str(target.parent), text=True)
         try:
-            with os.fdopen(fd, "w", encoding="mbcs", newline="") as handle:
+            with os.fdopen(fd, "w", encoding=_text_encoding(), newline="") as handle:
                 handle.write(value)
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -73,6 +84,45 @@ class LegacyStateStore:
             self._atomic_write(str(laser_root / f"装箱上线码{index}.txt"), code)
         self._atomic_write(self.config.quantity_file, str(len(products)))
         self._atomic_write(self.config.final_box_file, box_code)
+
+
+    def write_chery_label_files(
+        self,
+        *,
+        part_no: str | None = None,
+        batch: str | None = None,
+        layers: str | None = None,
+        qty: str | None = None,
+        prod_date: str | None = None,
+    ) -> str:
+        """写入奇瑞二维码载荷文本；仅在 [chery_label].enabled 时由 workflow 调用。"""
+        from . import chery_qr
+
+        cfg = self.config.chery
+        chosen_part = (part_no if part_no is not None else cfg.part_no).strip()
+        chosen_batch = (batch if batch is not None else cfg.batch).strip()
+        chosen_layers = (layers if layers is not None else cfg.layers).strip()
+        if not chosen_part:
+            raise StateStoreError("奇瑞标签零件号未配置")
+        if not chosen_batch:
+            raise StateStoreError("奇瑞标签发运批次未填写")
+        if not chosen_layers:
+            raise StateStoreError("奇瑞标签码放层数未填写")
+        part = chery_qr.get_part(chosen_part)
+        qty_text = (qty if qty is not None else cfg.qty_override).strip()
+        if not qty_text:
+            qty_text = str(part["qty"])
+        counters_path = cfg.counters_file
+        counters = chery_qr.load_counters(counters_path)
+        unique_code = chery_qr.next_unique_code(part["unique_prefix"], counters)
+        date_text = (prod_date or chery_qr.today_yyyymmdd()).strip()
+        payload = chery_qr.build_payload(
+            part["part_no"], qty_text, chosen_batch, chosen_layers,
+            date_text, unique_code, part["box_no"],
+        )
+        self._atomic_write(cfg.qr_payload_file, payload)
+        chery_qr.commit_unique_code(unique_code, counters, counters_path)
+        return payload
 
     def archive_products(self, box_code: str, products: list[str]) -> None:
         path = Path(self.config.laser_archive_dir) / f"{box_code}.txt"

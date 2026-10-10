@@ -33,3 +33,19 @@ pyinstaller --noconfirm --clean --onedir --windowed --name PackagingStation pyth
 ```
 
 首次现场切换必须先执行只读预检、备份原 VI/标签/状态文件并人工确认；数据库、扫码器或打印机异常时程序会阻止包装。
+
+## 可选：奇瑞 KD 标签二维码
+
+默认关闭。在 `%ProgramData%\PackagingStation\config.toml` 中设置：
+
+```toml
+[chery_label]
+enabled = true
+part_no = "30100351AA"
+batch = "你的发运批次"
+layers = "4"
+qr_payload_file = "D:/奇瑞二维码.txt"
+```
+
+开启后，箱满完成时仍按原路径写入 `装箱上线码0~11.txt`、`数量.txt`、`最终装箱码.txt`；随后额外写入 `奇瑞二维码.txt`（mbcs），供 BarTender 模板读取。供应商代码固定 `8KN`，纸箱唯一码按零件前缀自动递增。界面在开启时会显示零件/发运批次/码放层数字段；也可用配置默认值驱动。
+
