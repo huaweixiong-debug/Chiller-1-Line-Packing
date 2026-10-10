@@ -35,6 +35,8 @@ class PackagingWorkflow:
                  printer: LabelPrinter, on_update: Callable[[WorkflowSnapshot], None] | None = None):
         self.repository, self.store, self.printer = repository, store, printer
         self.on_update = on_update or (lambda snapshot: None)
+        store_config = getattr(store, "config", None)
+        self.box_quantity = max(1, int(getattr(store_config, "box_quantity", PACKAGE_SIZE)))
         self.chery_overrides: dict[str, str | None] = {
             "part_no": None, "batch": None, "layers": None, "qty": None,
         }
@@ -42,12 +44,18 @@ class PackagingWorkflow:
         self.session: BoxSession | None = None
         self.last_result: InspectionResult | None = None
 
+    def set_box_quantity(self, quantity: int) -> None:
+        """设置每箱件数（界面“数量”框驱动）；已开的箱同步更新目标件数。"""
+        self.box_quantity = max(1, int(quantity))
+        if self.session is not None:
+            self.session.target_quantity = self.box_quantity
+
     def _emit(self, message: str = "", *, products: list[str] | None = None,
               current_box: str | None = None, box_completed: bool = False,
               popup: str = "") -> WorkflowSnapshot:
         visible_products = (list(self.session.products) if self.session else []) if products is None else list(products)
         visible_box = (self.session.box_code if self.session else "") if current_box is None else current_box
-        snapshot = WorkflowSnapshot(self.state, visible_box, len(visible_products), PACKAGE_SIZE,
+        snapshot = WorkflowSnapshot(self.state, visible_box, len(visible_products), self.box_quantity,
                                     self.last_result, message, visible_products, box_completed, popup)
         self.on_update(snapshot)
         return snapshot
@@ -66,7 +74,7 @@ class PackagingWorkflow:
                 codes = "\n".join(f"{index}. {code}" for index, code in enumerate(session.products, 1))
                 return self._emit(
                     f"上次装箱未完成（{len(session.products)} 件，箱码 {session.box_code}），已清空，请重新扫码装箱",
-                    popup=f"上次装箱未完成，不足 12 件，已全部清空，需要重新扫码装箱：\n{codes}")
+                    popup=f"上次装箱未完成，不足 {session.target_quantity} 件，已全部清空，需要重新扫码装箱：\n{codes}")
             self.state = WorkflowState.READY
             return self._emit("系统就绪")
         except Exception as exc:
@@ -125,7 +133,7 @@ class PackagingWorkflow:
         if not laser_code.strip():
             raise WorkflowError("激光码不能为空")
         if self.session is None:
-            self.session = BoxSession(self.store.next_box_code())
+            self.session = BoxSession(self.store.next_box_code(), target_quantity=self.box_quantity)
         if laser_code in self.session.products:
             slot_number = self.session.products.index(laser_code) + 1
             result = self.last_result
@@ -142,10 +150,10 @@ class PackagingWorkflow:
         self.store.save_session(self.session)
         if self.session.complete:
             self.state = WorkflowState.FINALIZING
-            self._emit("12 件产品已全部通过，正在完成箱码并打印")
+            self._emit(f"{self.box_quantity} 件产品已全部通过，正在完成箱码并打印")
             return self.finalize_box()
         self.state = WorkflowState.BOX_IN_PROGRESS
-        return self._emit(f"第 {self.session.count}/12 件已加入当前箱：{laser_code}")
+        return self._emit(f"第 {self.session.count}/{self.box_quantity} 件已加入当前箱：{laser_code}")
 
 
     def set_chery_fields(

@@ -27,8 +27,9 @@ log = logging.getLogger(__name__)
 
 
 def slot_grid_positions(size: int = PACKAGE_SIZE) -> list[tuple[int, int]]:
-    """The legacy product panel is a single column of twelve touch rows."""
-    return [(index, 0) for index in range(size)]
+    """多列排布：每列最多 12 格，按列优先（12 件=1 列，30 件=3 列，高度不变）。"""
+    rows = min(max(1, size), 12)
+    return [(index % rows, index // rows) for index in range(size)]
 
 
 def classify_scan(code: str, config: StationConfig) -> str:
@@ -270,7 +271,7 @@ if QApplication is not None:
             progress_row = QHBoxLayout(); progress_row.setSpacing(8)
             self.details = QLabel("型号：—   箱码：—")
             progress_row.addWidget(self.details, 3)
-            self.progress = QProgressBar(); self.progress.setRange(0, PACKAGE_SIZE); self.progress.setFormat("0 / 12")
+            self.progress = QProgressBar(); self.progress.setRange(0, self.workflow.box_quantity); self.progress.setFormat(f"0 / {self.workflow.box_quantity}")
             progress_row.addWidget(self.progress, 2)
             left_layout.addLayout(progress_row)
             control_row = QHBoxLayout(); control_row.setSpacing(8)
@@ -284,10 +285,13 @@ if QApplication is not None:
 
             right = QFrame(); right.setObjectName("panel")
             right_layout = QVBoxLayout(right); right_layout.setContentsMargins(8, 8, 8, 8); right_layout.setSpacing(4)
-            right_layout.addWidget(QLabel("装箱产品（固定 12 件）"))
-            self.product_slots = [ProductSlot(index + 1) for index in range(PACKAGE_SIZE)]
-            for slot, (row, column) in zip(self.product_slots, slot_grid_positions()):
-                right_layout.addWidget(slot)
+            self.slots_title = QLabel(f"装箱产品（每箱 {self.workflow.box_quantity} 件）")
+            right_layout.addWidget(self.slots_title)
+            self.slots_layout = QGridLayout()
+            self.slots_layout.setSpacing(4)
+            right_layout.addLayout(self.slots_layout, 1)
+            self.product_slots = []
+            self._rebuild_slots(self.workflow.box_quantity)
             body.addWidget(right, 0, 1)
             body.setColumnStretch(0, 4); body.setColumnStretch(1, 5)
             self.chery_part_combo = None
@@ -343,9 +347,11 @@ if QApplication is not None:
                 self.chery_part_combo.currentIndexChanged.connect(self._on_chery_part_changed)
                 self.chery_batch_edit.textChanged.connect(self._sync_chery_fields)
                 self.chery_qty_edit.textChanged.connect(self._sync_chery_fields)
+                self.chery_qty_edit.textChanged.connect(self._on_chery_qty_changed)
                 self.chery_layers_edit.textChanged.connect(self._sync_chery_fields)
                 layout.addWidget(chery_box)
                 self._sync_chery_fields()
+                self._on_chery_qty_changed()
             self.log_label = QLabel("状态：系统启动")
             layout.addWidget(self.log_label)
             self._set_alert("normal", "扫码状态正常")
@@ -370,6 +376,37 @@ if QApplication is not None:
                 default_qty = ""
             self.chery_qty_edit.setText(default_qty)
             self._sync_chery_fields()
+
+        def _on_chery_qty_changed(self, *_args) -> None:
+            """数量框（选零件自动带出、可手改）同时决定每箱件数。"""
+            if not self.config.chery.enabled or self.chery_qty_edit is None:
+                return
+            text = self.chery_qty_edit.text().strip()
+            if text.isdigit() and int(text) > 0:
+                self._apply_box_quantity(int(text))
+
+        def _apply_box_quantity(self, quantity: int) -> None:
+            self.workflow.set_box_quantity(quantity)
+            self.progress.setRange(0, quantity)
+            count = self.workflow.session.count if self.workflow.session else 0
+            self.progress.setFormat(f"{count} / {quantity}")
+            self.slots_title.setText(f"装箱产品（每箱 {quantity} 件）")
+            self._rebuild_slots(quantity)
+            self._render_slots(self.workflow.session.products if self.workflow.session else [])
+
+        def _rebuild_slots(self, quantity: int) -> None:
+            while self.slots_layout.count():
+                item = self.slots_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.setParent(None)
+                    widget.deleteLater()
+            positions = slot_grid_positions(quantity)
+            for column in range(max((col for _, col in positions), default=0) + 1):
+                self.slots_layout.setColumnStretch(column, 1)
+            self.product_slots = [ProductSlot(index + 1) for index in range(quantity)]
+            for slot, (row, column) in zip(self.product_slots, positions):
+                self.slots_layout.addWidget(slot, row, column)
 
         def _sync_chery_fields(self, *_args) -> None:
             if not self.config.chery.enabled:
@@ -446,7 +483,7 @@ if QApplication is not None:
                 QMessageBox.warning(self, "装箱未完成", snapshot.popup)
             self.current_box[1].setText(snapshot.current_box or "—")
             self.pack_count[1].setText(str(snapshot.box_count))
-            self.progress.setValue(snapshot.box_count); self.progress.setFormat(f"{snapshot.box_count} / {PACKAGE_SIZE}")
+            self.progress.setValue(snapshot.box_count); self.progress.setFormat(f"{snapshot.box_count} / {snapshot.target_quantity}")
             self.log_label.setText(f"状态：{snapshot.state.value}  ·  {snapshot.message}")
             self._render_slots(snapshot.products or [])
             self._render_status_lamps(snapshot)
@@ -464,7 +501,7 @@ if QApplication is not None:
             if snapshot.state is WorkflowState.ERROR_BLOCKED:
                 self.scan_gate.resolve(False); self._set_input_enabled(False); self.retry.setEnabled(True); self._set_alert("error", snapshot.message); return
             if snapshot.box_completed:
-                self._completion_hold = True; self.scan_gate.resolve(False); self._set_input_enabled(False); self._set_alert("success", "12 件全部完成，箱码已打印"); self.completion_timer.start(2000); return
+                self._completion_hold = True; self.scan_gate.resolve(False); self._set_input_enabled(False); self._set_alert("success", f"{snapshot.target_quantity} 件全部完成，箱码已打印"); self.completion_timer.start(2000); return
             if snapshot.state in (WorkflowState.READY, WorkflowState.BOX_IN_PROGRESS):
                 if duplicate_flag: self._set_alert("error", snapshot.message)
                 else: self._set_alert("normal", "扫码状态正常")
@@ -513,7 +550,7 @@ if QApplication is not None:
 
         def _finish_completion_hold(self) -> None:
             if not self._completion_hold or self.workflow.state is not WorkflowState.READY: return
-            self._completion_hold = False; self._render_slots([]); self._render_status_lamps(WorkflowSnapshot(WorkflowState.READY)); self.progress.setValue(0); self.progress.setFormat("0 / 12"); self.current_box[1].setText("—"); self.status.setText("上一箱已完成，请扫描下一箱"); self._set_alert("normal", "扫码状态正常"); self.scan_gate.resolve(True); self._set_input_enabled(True); self.scan.setFocus()
+            self._completion_hold = False; self._render_slots([]); self._render_status_lamps(WorkflowSnapshot(WorkflowState.READY)); self.progress.setValue(0); self.progress.setFormat(f"0 / {self.workflow.box_quantity}"); self.current_box[1].setText("—"); self.status.setText("上一箱已完成，请扫描下一箱"); self._set_alert("normal", "扫码状态正常"); self.scan_gate.resolve(True); self._set_input_enabled(True); self.scan.setFocus()
 
         @Slot(str)
         def _show_error(self, message: str) -> None:

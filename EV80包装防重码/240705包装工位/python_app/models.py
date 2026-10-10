@@ -83,6 +83,7 @@ class StationConfig:
     journal_file: str = r"%ProgramData%\PackagingStation\box_journal.json"
     session_file: str = r"%ProgramData%\PackagingStation\box_session.json"
     station_name: str = "包装工位"
+    box_quantity: int = PACKAGE_SIZE
     chery: CheryLabelConfig = field(default_factory=CheryLabelConfig)
     admin_username: str = "admin"
     admin_password: str = "admin123"
@@ -113,8 +114,8 @@ class InspectionResult:
 @dataclass
 class BoxSession:
     box_code: str
-    target_quantity: int = field(default=PACKAGE_SIZE, init=False)
     products: list[str] = field(default_factory=list)
+    target_quantity: int = PACKAGE_SIZE
     started_at: datetime = field(default_factory=datetime.now)
 
     @property

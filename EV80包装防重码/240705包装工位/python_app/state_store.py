@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -59,8 +60,8 @@ class LegacyStateStore:
             raise StateStoreError(f"写入状态文件失败: {path}: {exc}") from exc
 
     def target_quantity(self) -> int:
-        """Return the fixed production contract; the legacy quantity file is ignored."""
-        return PACKAGE_SIZE
+        """每箱件数由 config.box_quantity 决定（界面“数量”框可实时覆盖）。"""
+        return max(1, int(getattr(self.config, "box_quantity", PACKAGE_SIZE)))
 
     def next_box_code(self) -> str:
         sequence_text = self._read(self.config.box_sequence_file, "0")
@@ -76,14 +77,21 @@ class LegacyStateStore:
         self._atomic_write(self.config.box_sequence_file, str(current + 1))
 
     def write_print_files(self, box_code: str, products: list[str]) -> None:
-        """按现场约定写 BarTender 标签数据文件：装箱上线码0~11.txt + 数量 + 最终箱码。"""
-        if len(products) != PACKAGE_SIZE:
-            raise StateStoreError(f"打印前需要 {PACKAGE_SIZE} 个上线码，实际 {len(products)} 个")
+        """按现场约定写 BarTender 标签数据文件：装箱上线码0~N-1.txt + 数量 + 最终箱码，并清掉上一箱多余的文件。"""
+        if not products:
+            raise StateStoreError("打印前至少需要一个上线码")
         laser_root = Path(self.config.laser_archive_dir).parent
         for index, code in enumerate(products):
             self._atomic_write(str(laser_root / f"装箱上线码{index}.txt"), code)
         self._atomic_write(self.config.quantity_file, str(len(products)))
         self._atomic_write(self.config.final_box_file, box_code)
+        for leftover in laser_root.glob("装箱上线码*.txt"):
+            match = re.fullmatch(r"装箱上线码(\d+)\.txt", leftover.name)
+            if match and int(match.group(1)) >= len(products):
+                try:
+                    leftover.unlink()
+                except OSError:
+                    pass
 
 
     def write_chery_label_files(
@@ -147,7 +155,8 @@ class LegacyStateStore:
             raise StateStoreError(f"清理 journal 失败: {exc}") from exc
 
     def save_session(self, box: BoxSession) -> None:
-        data = {"box_code": box.box_code, "products": list(box.products)}
+        data = {"box_code": box.box_code, "target_quantity": box.target_quantity,
+                "products": list(box.products)}
         self._atomic_write(str(self.session_path), json.dumps(data, ensure_ascii=False, indent=2))
 
     def load_session(self) -> BoxSession | None:
@@ -157,7 +166,12 @@ class LegacyStateStore:
             return None
         except (OSError, ValueError, TypeError) as exc:
             raise StateStoreError(f"读取装箱进度失败: {exc}") from exc
-        return BoxSession(str(data.get("box_code", "")), [str(code) for code in data.get("products", [])])
+        try:
+            target_quantity = int(data.get("target_quantity", PACKAGE_SIZE))
+        except (TypeError, ValueError):
+            target_quantity = PACKAGE_SIZE
+        return BoxSession(str(data.get("box_code", "")),
+                          [str(code) for code in data.get("products", [])], max(1, target_quantity))
 
     def clear_session(self) -> None:
         try:

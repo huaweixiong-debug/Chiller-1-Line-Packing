@@ -29,6 +29,8 @@ journal_file = "%ProgramData%/PackagingStation/box_journal.json"
 station_name = "包装工位"
 # 达到该长度的扫码按“装箱”处理，否则只查询
 pack_min_length = 22
+# 每箱件数默认值；奇瑞 KD 的“数量”框（选零件自动带出）会在运行时覆盖它
+box_quantity = 12
 
 # information 表的列名映射（现场表结构变化时只改这里）
 [columns]

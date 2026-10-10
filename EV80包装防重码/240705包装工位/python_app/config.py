@@ -45,6 +45,8 @@ def load_config(path: str | os.PathLike[str] | None = None) -> StationConfig:
         cfg.station_name = str(app["station_name"])
     if "pack_min_length" in app:
         cfg.pack_min_length = int(app["pack_min_length"])
+    if "box_quantity" in app:
+        cfg.box_quantity = max(1, int(app["box_quantity"]))
     for name, value in raw.get("columns", {}).items():
         if hasattr(cfg.columns, name):
             setattr(cfg.columns, name, str(value))

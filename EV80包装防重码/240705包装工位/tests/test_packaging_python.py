@@ -152,6 +152,55 @@ def test_config_loads_admin_credentials(tmp_path):
     assert cfg.admin_password == "secret"
 
 
+def test_workflow_packs_variable_box_quantity(tmp_path):
+    cfg = StationConfig(
+        box_quantity=30, quantity_file=str(tmp_path / "数量.txt"), final_box_file=str(tmp_path / "最终.txt"),
+        box_sequence_file=str(tmp_path / "序号.txt"), laser_archive_dir=str(tmp_path / "archive"),
+        journal_file=str(tmp_path / "journal.json"), session_file=str(tmp_path / "session.json"),
+    )
+    (tmp_path / "序号.txt").write_text("1", encoding="utf-8")
+    store = LegacyStateStore(cfg)
+    repo = MemoryRepository()
+    printer = MemoryPrinter()
+    flow = PackagingWorkflow(repo, store, printer)
+    assert flow.box_quantity == 30
+    flow.startup_check()
+
+    snapshot = flow.process_customer_scan("CODE-000")
+    assert snapshot.target_quantity == 30
+    for index in range(1, 29):
+        snapshot = flow.process_customer_scan(f"CODE-{index:03d}")
+        assert snapshot.box_completed is False
+    assert snapshot.box_count == 29
+
+    snapshot = flow.process_customer_scan("CODE-029")
+    assert snapshot.box_completed is True
+    assert printer.calls == 1
+    assert len(repo.updates[0][1]) == 30
+    assert (tmp_path / "装箱上线码29.txt").read_text(encoding=_text_encoding()) == "CODE-029"
+    assert not (tmp_path / "装箱上线码30.txt").exists()
+    assert (tmp_path / "数量.txt").read_text(encoding=_text_encoding()) == "30"
+
+
+def test_workflow_box_quantity_can_change_midbox(tmp_path):
+    cfg = StationConfig(
+        box_quantity=12, quantity_file=str(tmp_path / "数量.txt"), final_box_file=str(tmp_path / "最终.txt"),
+        box_sequence_file=str(tmp_path / "序号.txt"), laser_archive_dir=str(tmp_path / "archive"),
+        journal_file=str(tmp_path / "journal.json"), session_file=str(tmp_path / "session.json"),
+    )
+    (tmp_path / "序号.txt").write_text("1", encoding="utf-8")
+    store = LegacyStateStore(cfg)
+    flow = PackagingWorkflow(MemoryRepository(), store, MemoryPrinter())
+    flow.startup_check()
+    flow.process_customer_scan("CODE-000")
+    flow.set_box_quantity(3)  # 界面把数量从 12 改成 3
+    assert flow.session.target_quantity == 3
+    flow.process_customer_scan("CODE-001")
+    snapshot = flow.process_customer_scan("CODE-002")
+    assert snapshot.box_completed is True
+    assert snapshot.target_quantity == 3
+
+
 def test_config_loads_scanner_serial_settings(tmp_path):
     from python_app.config import load_config
     cfg_file = tmp_path / "config.toml"
@@ -198,8 +247,31 @@ def test_state_store_writes_print_files_for_bartender(tmp_path):
     assert (root / "最终.txt").read_text(encoding=_text_encoding()) == "2026090925810"
     store.advance_box_sequence()
     assert (root / "序号.txt").read_text(encoding=_text_encoding()) == "25811"
-    with pytest.raises(Exception):
-        store.write_print_files("2026090925811", products[:11])
+
+    # 上一箱 30 件留下的多余文件要清掉
+    stale = root / "装箱上线码29.txt"
+    stale.write_text("OLD", encoding="utf-8")
+    store.write_print_files("2026090925811", products)
+    assert not stale.exists()
+    assert not (root / "装箱上线码12.txt").exists()
+
+
+def test_state_store_supports_variable_box_quantity(tmp_path):
+    cfg = StationConfig(
+        quantity_file=str(tmp_path / "数量.txt"), final_box_file=str(tmp_path / "最终.txt"),
+        box_sequence_file=str(tmp_path / "序号.txt"), laser_archive_dir=str(tmp_path / "archive"),
+        journal_file=str(tmp_path / "journal.json"), box_quantity=30,
+    )
+    (tmp_path / "序号.txt").write_text("5", encoding="utf-8")
+    store = LegacyStateStore(cfg)
+    assert store.target_quantity() == 30
+
+    products = [f"CODE-{index:02d}" for index in range(30)]
+    store.write_print_files("2026101000005", products)
+    assert (tmp_path / "装箱上线码29.txt").read_text(encoding=_text_encoding()) == "CODE-29"
+    assert not (tmp_path / "装箱上线码30.txt").exists()
+    assert (tmp_path / "数量.txt").read_text(encoding=_text_encoding()) == "30"
+    assert (tmp_path / "最终.txt").read_text(encoding=_text_encoding()) == "2026101000005"
 
 
 def test_workflow_blocks_pending_journal(tmp_path):
