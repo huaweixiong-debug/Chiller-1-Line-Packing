@@ -53,27 +53,35 @@ def test_inspection_marks_existing_box_as_database_duplicate():
 
 
 def test_inspect_blocks_only_enabled_checks():
-    def make_repo(row, helium=False, tightening=False):
+    def make_repo(row, vision_column=False, **switches):
         config = StationConfig()
-        config.checks.helium = helium
-        config.checks.tightening = tightening
+        for name, value in switches.items():
+            setattr(config.checks, name, value)
+        if vision_column:
+            config.columns.vision_result = "视觉检测结果"
         return InspectionRepository(config, connector=lambda **kwargs: FakeConn([row]))
 
-    def row(dry="OK", helium="", tightening="OK"):
+    def row(dry="OK", helium="", tightening="OK", vision="OK"):
         return {"上线码": "CODE", "测试时间": "2026/10/10 10:00:00", "干检结果": dry,
-                "氦检结果": helium, "拧紧结果": tightening, "装箱码": "", "产品型号": "E109"}
+                "氦检结果": helium, "拧紧结果": tightening, "视觉检测结果": vision,
+                "装箱码": "", "产品型号": "E109"}
 
     ok_result = make_repo(row()).inspect_customer("CODE")
     assert ok_result.can_package is True
     assert ok_result.reason == "校验通过"
     assert ok_result.model == "E109"
     assert ok_result.tightening_test == "OK"
+    assert ok_result.vision_test == ""  # 未配置视觉列时不读取
 
     helium_ignored = make_repo(row(helium="NG")).inspect_customer("CODE")
     assert helium_ignored.can_package is True
 
     tightening_ignored = make_repo(row(tightening="NG")).inspect_customer("CODE")
     assert tightening_ignored.can_package is True
+
+    vision_ignored = make_repo(row(vision="NG"), vision_column=True).inspect_customer("CODE")
+    assert vision_ignored.can_package is True
+    assert vision_ignored.vision_test == "NG"
 
     bad_dry = make_repo(row(dry="NG")).inspect_customer("CODE")
     assert bad_dry.can_package is False
@@ -90,6 +98,24 @@ def test_inspect_blocks_only_enabled_checks():
     tightening_enabled = make_repo(row(tightening="NG"), tightening=True).inspect_customer("CODE")
     assert tightening_enabled.can_package is False
     assert "拧紧未通过（NG）" in tightening_enabled.reason
+
+    vision_enabled = make_repo(row(vision="NG"), vision_column=True, vision=True).inspect_customer("CODE")
+    assert vision_enabled.can_package is False
+    assert "视觉检测未通过（NG）" in vision_enabled.reason
+
+
+def test_vision_column_is_optional():
+    conn = FakeConn([{"上线码": "CODE", "干检结果": "OK"}])
+    repo = InspectionRepository(StationConfig(), connector=lambda **kwargs: conn)
+    assert repo.inspect_serial("CODE").vision_test == ""
+    assert "视觉检测" not in conn.cursor_obj.executed[0][0]
+
+    config = StationConfig()
+    config.columns.vision_result = "视觉检测结果"
+    conn2 = FakeConn([{"上线码": "CODE", "干检结果": "OK", "视觉检测结果": "OK"}])
+    result = InspectionRepository(config, connector=lambda **kwargs: conn2).inspect_serial("CODE")
+    assert result.vision_test == "OK"
+    assert "视觉检测结果" in conn2.cursor_obj.executed[0][0]
 
 
 def test_inspection_returns_missing_code_reason():

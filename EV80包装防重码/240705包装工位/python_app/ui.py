@@ -258,7 +258,7 @@ if QApplication is not None:
             left_layout.addWidget(self.status)
             self.status_lamps = {}
             lamp_grid = QGridLayout(); lamp_grid.setSpacing(6)
-            for index, title in enumerate(("干检", "氦检", "拧紧", "包装完成", "重复包装")):
+            for index, title in enumerate(("干检", "氦检", "拧紧", "视觉检测", "包装完成", "重复包装")):
                 card = StatusLamp(title); self.status_lamps[title] = card
                 lamp_grid.addWidget(card, index // 3, index % 3)
             left_layout.addLayout(lamp_grid, 1)
@@ -448,12 +448,17 @@ if QApplication is not None:
                 self._set_result_lamp("干检", result.dry_test, active=self.config.checks.dry_test)
                 self._set_result_lamp("氦检", result.helium_test, active=self.config.checks.helium)
                 self._set_result_lamp("拧紧", result.tightening_test, active=self.config.checks.tightening)
+                self._set_result_lamp("视觉检测", result.vision_test, active=self.config.checks.vision,
+                                      unset=not self.config.columns.vision_result)
                 if result.already_boxed: self.status_lamps["包装完成"].set_state("success", "已包装")
                 if result.is_duplicate: self.status_lamps["重复包装"].set_state("error", "重码")
             if snapshot.box_completed: self.status_lamps["包装完成"].set_state("success", "已完成")
 
-        def _set_result_lamp(self, title: str, value: str, active: bool = True) -> None:
-            """active=True 的工序参与阻断核验（红色=拦截）；active=False 只显示结果。"""
+        def _set_result_lamp(self, title: str, value: str, active: bool = True, unset: bool = False) -> None:
+            """active=True 的工序参与阻断核验（红色=拦截）；unset=True 表示该工序尚未接入数据列。"""
+            if unset:
+                self.status_lamps[title].set_state("idle", "未接入")
+                return
             normalized = (value or "").strip().upper()
             if normalized == "OK":
                 self.status_lamps[title].set_state("success", "通过")

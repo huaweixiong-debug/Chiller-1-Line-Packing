@@ -37,18 +37,16 @@ class InspectionRepository:
         except Exception as exc:
             raise DatabaseError(f"数据库连接失败: {exc}") from exc
 
-    @property
-    def _columns(self) -> tuple[str, str, str, str, str, str, str]:
-        cols = self.config.columns
-        return (cols.code, cols.time, cols.dry_result, cols.helium_result,
-                cols.tightening_result, cols.box, cols.model)
-
     def query_rows(self, code: str) -> list[dict]:
         """按上线码取该产品的全部检测记录，最新的排在最前。"""
-        code_col, time_col, dry_col, helium_col, tightening_col, box_col, model_col = self._columns
-        sql = (f"SELECT `{code_col}`, `{time_col}`, `{dry_col}`, `{helium_col}`, `{tightening_col}`, "
-               f"`{box_col}`, `{model_col}` FROM information WHERE `{code_col}`=%s "
-               f"ORDER BY `{time_col}` DESC LIMIT 500")
+        cols = self.config.columns
+        selected = [cols.code, cols.time, cols.dry_result, cols.helium_result,
+                    cols.tightening_result, cols.box, cols.model]
+        if cols.vision_result:
+            selected.append(cols.vision_result)
+        projections = ", ".join(f"`{name}`" for name in selected)
+        sql = (f"SELECT {projections} FROM information WHERE `{cols.code}`=%s "
+               f"ORDER BY `{cols.time}` DESC LIMIT 500")
         try:
             with self.connection() as conn:
                 with conn.cursor(DictCursor) as cur:
@@ -76,9 +74,10 @@ class InspectionRepository:
         dry = self._text(latest, columns.dry_result)
         helium = self._text(latest, columns.helium_result)
         tightening = self._text(latest, columns.tightening_result)
+        vision = self._text(latest, columns.vision_result) if columns.vision_result else ""
         result = InspectionResult(code, mode, rows=rows, model=self._text(latest, columns.model),
                                   dry_test=dry, helium_test=helium, tightening_test=tightening,
-                                  box_code=box_code, already_boxed=bool(box_code),
+                                  vision_test=vision, box_code=box_code, already_boxed=bool(box_code),
                                   online_count=len(rows), is_duplicate=False)
         if result.already_boxed and checks.duplicate:
             result.is_duplicate = True
@@ -92,6 +91,8 @@ class InspectionRepository:
             problems.append("氦检未完成（无记录）" if not helium else f"氦检未通过（{helium}）")
         if checks.tightening and tightening != "OK":
             problems.append("拧紧未完成（无记录）" if not tightening else f"拧紧未通过（{tightening}）")
+        if checks.vision and vision != "OK":
+            problems.append("视觉检测未完成（无记录）" if not vision else f"视觉检测未通过（{vision}）")
         result.can_package = not problems
         result.reason = "校验通过" if result.can_package else "不允许装箱：" + "，".join(problems)
         return result
@@ -107,7 +108,7 @@ class InspectionRepository:
     def update_box_codes(self, box_code: str, laser_codes: Sequence[str]) -> None:
         if not laser_codes:
             raise DatabaseError("没有可回写的上线码")
-        code_col, _, _, _, _, box_col, _ = self._columns
+        code_col, box_col = self.config.columns.code, self.config.columns.box
         try:
             with self.connection() as conn:
                 with conn.cursor() as cur:
@@ -124,7 +125,7 @@ class InspectionRepository:
 
     def release_from_box(self, code: str, expected_box: str) -> bool:
         """回退模式：仅当产品仍处于扫码时所见的箱码内，才解除其箱码。"""
-        code_col, _, _, _, _, box_col, _ = self._columns
+        code_col, box_col = self.config.columns.code, self.config.columns.box
         try:
             with self.connection() as conn:
                 with conn.cursor() as cur:

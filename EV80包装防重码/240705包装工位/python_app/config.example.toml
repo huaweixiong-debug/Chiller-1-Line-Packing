@@ -37,14 +37,16 @@ time = "测试时间"
 dry_result = "干检结果"
 helium_result = "氦检结果"
 tightening_result = "拧紧结果"
+vision_result = ""      # 视觉检测结果列名；现场表还没有这一列时留空（灯显示“未接入”）
 box = "装箱码"
 model = "产品型号"
 
-# 装箱审核开关；当前只激活干检核验，氦检/拧紧仅显示不阻断
+# 装箱审核开关；当前只激活干检核验，氦检/拧紧/视觉检测仅显示不阻断
 [checks]
 dry_test = true
 helium = false
 tightening = false
+vision = false
 duplicate = true
 
 # 可选：奇瑞 KD 标签二维码（默认关闭；开启后在写完现有打印文件后额外写一份载荷文本，不改名现有文件）
