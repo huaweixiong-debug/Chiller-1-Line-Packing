@@ -630,6 +630,39 @@ def test_chery_enabled_writes_qr_payload_file(tmp_path):
     assert "31#A0002$" in payload2
 
 
+def test_chery_payload_uses_part_default_and_manual_qty(tmp_path):
+    from python_app.chery_qr import get_part
+
+    qr_path = tmp_path / "奇瑞二维码.txt"
+    cfg = StationConfig(
+        quantity_file=str(tmp_path / "数量.txt"),
+        final_box_file=str(tmp_path / "最终.txt"),
+        box_sequence_file=str(tmp_path / "序号.txt"),
+        laser_archive_dir=str(tmp_path / "archive"),
+        journal_file=str(tmp_path / "journal.json"),
+        session_file=str(tmp_path / "session.json"),
+        chery=CheryLabelConfig(
+            enabled=True, part_no="30100351AA", batch="BATCH-1", layers="4",
+            qr_payload_file=str(qr_path), counters_file=str(tmp_path / "chery_counters.json"),
+        ),
+    )
+    (tmp_path / "序号.txt").write_text("3", encoding="utf-8")
+    store = LegacyStateStore(cfg)
+
+    assert get_part("30100351AA")["qty"] == 6
+    payload = store.write_chery_label_files()  # 不传数量 -> 用零件表默认 6
+    assert "17#6$" in payload
+
+    payload = store.write_chery_label_files(qty="12")  # 界面手动改成 12
+    assert "17#12$" in payload
+
+    payload = store.write_chery_label_files(qty="")  # 清空 -> 回落零件表默认
+    assert "17#6$" in payload
+
+    other = store.write_chery_label_files(part_no="301003484AA", qty="")
+    assert other.startswith("10#301003484AA$") and "17#30$" in other
+
+
 def test_config_loads_chery_label(tmp_path):
     from python_app.config import load_config
 

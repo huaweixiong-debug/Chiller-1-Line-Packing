@@ -292,9 +292,10 @@ if QApplication is not None:
             body.setColumnStretch(0, 4); body.setColumnStretch(1, 5)
             self.chery_part_combo = None
             self.chery_batch_edit = None
+            self.chery_qty_edit = None
             self.chery_layers_edit = None
             if self.config.chery.enabled:
-                from .chery_qr import PARTS
+                from .chery_qr import PARTS, get_part
                 chery_box = QFrame()
                 chery_box.setObjectName("panel")
                 chery_row = QHBoxLayout(chery_box)
@@ -315,6 +316,15 @@ if QApplication is not None:
                 self.chery_batch_edit.setPlaceholderText("发运批次")
                 chery_row.addWidget(QLabel("批次"))
                 chery_row.addWidget(self.chery_batch_edit)
+                current_part = self.chery_part_combo.currentData()
+                try:
+                    default_qty = str(get_part(current_part)["qty"])
+                except (ValueError, TypeError):
+                    default_qty = ""
+                self.chery_qty_edit = QLineEdit(self.config.chery.qty_override or default_qty)
+                self.chery_qty_edit.setPlaceholderText("数量")
+                chery_row.addWidget(QLabel("数量"))
+                chery_row.addWidget(self.chery_qty_edit)
                 self.chery_layers_edit = QLineEdit(self.config.chery.layers)
                 self.chery_layers_edit.setPlaceholderText("层数")
                 chery_row.addWidget(QLabel("层数"))
@@ -325,11 +335,14 @@ if QApplication is not None:
                 char_width = metrics.horizontalAdvance("0")
                 self.chery_part_combo.setFixedWidth(char_width * 12 + 30)
                 self.chery_batch_edit.setFixedWidth(char_width * 16 + 24)
+                self.chery_qty_edit.setFixedWidth(char_width * 5 + 18)
                 self.chery_layers_edit.setFixedWidth(char_width * 5 + 18)
-                self.chery_part_combo.setToolTip("奇瑞 KD 零件号（决定二维码载荷）")
+                self.chery_part_combo.setToolTip("奇瑞 KD 零件号（决定二维码载荷，选定后自动带出每箱默认数量）")
                 self.chery_batch_edit.setToolTip("发运批次（手动输入，按 16 字符宽度）")
-                self.chery_part_combo.currentIndexChanged.connect(self._sync_chery_fields)
+                self.chery_qty_edit.setToolTip("每箱包装数量（默认取零件表，可手动修改）")
+                self.chery_part_combo.currentIndexChanged.connect(self._on_chery_part_changed)
                 self.chery_batch_edit.textChanged.connect(self._sync_chery_fields)
+                self.chery_qty_edit.textChanged.connect(self._sync_chery_fields)
                 self.chery_layers_edit.textChanged.connect(self._sync_chery_fields)
                 layout.addWidget(chery_box)
                 self._sync_chery_fields()
@@ -346,13 +359,26 @@ if QApplication is not None:
             return text, edit
 
 
+        def _on_chery_part_changed(self, *_args) -> None:
+            """切换零件后自动带出该零件表里的每箱默认数量（仍可手动改）。"""
+            if not self.config.chery.enabled or self.chery_qty_edit is None:
+                return
+            from .chery_qr import get_part
+            try:
+                default_qty = str(get_part(self.chery_part_combo.currentData())["qty"])
+            except (ValueError, TypeError):
+                default_qty = ""
+            self.chery_qty_edit.setText(default_qty)
+            self._sync_chery_fields()
+
         def _sync_chery_fields(self, *_args) -> None:
             if not self.config.chery.enabled:
                 return
             part_no = self.chery_part_combo.currentData() if self.chery_part_combo else None
             batch = self.chery_batch_edit.text() if self.chery_batch_edit else ""
             layers = self.chery_layers_edit.text() if self.chery_layers_edit else ""
-            self.workflow.set_chery_fields(part_no=part_no, batch=batch, layers=layers)
+            qty = self.chery_qty_edit.text() if self.chery_qty_edit else ""
+            self.workflow.set_chery_fields(part_no=part_no, batch=batch, layers=layers, qty=qty)
 
         def _set_mode(self, mode: str) -> None:
             self._mode = mode
