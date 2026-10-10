@@ -44,3 +44,13 @@ model = "产品型号"
 dry_test = true
 helium = false
 duplicate = true
+
+# 可选：奇瑞 KD 标签二维码（默认关闭；开启后在写完现有打印文件后额外写一份载荷文本，不改名现有文件）
+[chery_label]
+enabled = false
+part_no = "30100351AA"
+batch = ""
+layers = ""
+# qty_override = ""   # 留空则用零件表默认包装数量
+qr_payload_file = "D:/奇瑞二维码.txt"
+counters_file = "%ProgramData%/PackagingStation/chery_counters.json"

@@ -51,6 +51,23 @@ def load_config(path: str | os.PathLike[str] | None = None) -> StationConfig:
     for name, value in raw.get("checks", {}).items():
         if hasattr(cfg.checks, name):
             setattr(cfg.checks, name, bool(value))
+
+    chery = raw.get("chery_label", {})
+    if chery:
+        if "enabled" in chery:
+            cfg.chery.enabled = bool(chery["enabled"])
+        if "part_no" in chery:
+            cfg.chery.part_no = str(chery["part_no"])
+        if "batch" in chery:
+            cfg.chery.batch = str(chery["batch"])
+        if "layers" in chery:
+            cfg.chery.layers = str(chery["layers"])
+        if "qty_override" in chery:
+            cfg.chery.qty_override = str(chery["qty_override"])
+        if "qr_payload_file" in chery:
+            cfg.chery.qr_payload_file = _expand(str(chery["qr_payload_file"]))
+        if "counters_file" in chery:
+            cfg.chery.counters_file = _expand(str(chery["counters_file"]))
     admin = raw.get("admin", {})
     if "username" in admin:
         cfg.admin_username = str(admin["username"])

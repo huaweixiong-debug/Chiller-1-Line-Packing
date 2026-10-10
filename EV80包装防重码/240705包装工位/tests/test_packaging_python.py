@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from python_app.models import (BoxSession, FinalizationJournal, InspectionResult, PACKAGE_SIZE,
-                               StationConfig, WorkflowState)
+from python_app.models import (BoxSession, CheryLabelConfig, FinalizationJournal, InspectionResult,
+                               PACKAGE_SIZE, StationConfig, WorkflowState)
 from python_app.db import InspectionRepository
 from python_app.printer import LabelPrinter, PrinterError
-from python_app.state_store import LegacyStateStore
+from python_app.state_store import LegacyStateStore, _text_encoding
 from python_app.workflow import PackagingWorkflow, WorkflowError
 from python_app.scanner import ScanGate, ScannerService
 import socket
@@ -146,7 +146,7 @@ def test_state_store_box_code_and_atomic_archive(tmp_path):
     assert box_code.endswith("00007")
     assert len(box_code) == 13
     store.archive_products("BOX20260831007", ["a", "b"])
-    assert (tmp_path / "archive" / "BOX20260831007.txt").read_text(encoding="mbcs").splitlines() == ["a", "b"]
+    assert (tmp_path / "archive" / "BOX20260831007.txt").read_text(encoding=_text_encoding()).splitlines() == ["a", "b"]
 
 
 def test_state_store_writes_print_files_for_bartender(tmp_path):
@@ -157,12 +157,12 @@ def test_state_store_writes_print_files_for_bartender(tmp_path):
     store.write_print_files("2026090925810", products)
     root = tmp_path
     for index in range(PACKAGE_SIZE):
-        assert (root / f"装箱上线码{index}.txt").read_text(encoding="mbcs") == f"LASER-{index:02d}"
+        assert (root / f"装箱上线码{index}.txt").read_text(encoding=_text_encoding()) == f"LASER-{index:02d}"
     assert not (root / "装箱上线码12.txt").exists()
-    assert (root / "数量.txt").read_text(encoding="mbcs") == "12"
-    assert (root / "最终.txt").read_text(encoding="mbcs") == "2026090925810"
+    assert (root / "数量.txt").read_text(encoding=_text_encoding()) == "12"
+    assert (root / "最终.txt").read_text(encoding=_text_encoding()) == "2026090925810"
     store.advance_box_sequence()
-    assert (root / "序号.txt").read_text(encoding="mbcs") == "25811"
+    assert (root / "序号.txt").read_text(encoding=_text_encoding()) == "25811"
     with pytest.raises(Exception):
         store.write_print_files("2026090925811", products[:11])
 
@@ -485,3 +485,132 @@ def test_scan_gate_allows_only_one_scan_until_resolved():
     assert gate.begin() is False
     gate.resolve(True)
     assert gate.begin() is True
+
+
+def test_chery_payload_format():
+    from python_app.chery_qr import SUPPLIER_CODE, build_payload, get_part, next_unique_code
+
+    part = get_part("30100351AA")
+    payload = build_payload(
+        part["part_no"], part["qty"], "18886-CT1520210711", 4,
+        "20261010", "A0001", part["box_no"],
+    )
+    assert payload == (
+        "10#30100351AA$ 11#8KN$ 17#6$ 18#18886-CT1520210711$ "
+        "19#4$ 20#20261010$ 31#A0001$ PK#ZX680540230$"
+    )
+    assert SUPPLIER_CODE == "8KN"
+    assert next_unique_code("A0001", {}) == "A0001"
+    assert next_unique_code("A0001", {"A": 1}) == "A0002"
+
+
+def test_chery_disabled_does_not_write_extra_file(tmp_path):
+    cfg = StationConfig(
+        quantity_file=str(tmp_path / "数量.txt"),
+        final_box_file=str(tmp_path / "最终.txt"),
+        box_sequence_file=str(tmp_path / "序号.txt"),
+        laser_archive_dir=str(tmp_path / "archive"),
+        journal_file=str(tmp_path / "journal.json"),
+        session_file=str(tmp_path / "session.json"),
+        chery=CheryLabelConfig(
+            enabled=False,
+            qr_payload_file=str(tmp_path / "奇瑞二维码.txt"),
+            counters_file=str(tmp_path / "chery_counters.json"),
+        ),
+    )
+    (tmp_path / "序号.txt").write_text("1", encoding="utf-8")
+    store = LegacyStateStore(cfg)
+
+    class Repo:
+        def update_box_codes(self, box_code, products):
+            pass
+
+        def inspect_customer(self, code):
+            return InspectionResult(code, "customer", can_package=True, reason="ok")
+
+    class Printer:
+        def print_label(self):
+            pass
+
+    flow = PackagingWorkflow(Repo(), store, Printer())
+    flow.startup_check()
+    for index in range(PACKAGE_SIZE):
+        flow.process_customer_scan(f"CODE-{index:02d}")
+    assert not (tmp_path / "奇瑞二维码.txt").exists()
+    assert (tmp_path / "装箱上线码0.txt").exists()
+    assert (tmp_path / "数量.txt").read_text(encoding=_text_encoding()) == "12"
+
+
+def test_chery_enabled_writes_qr_payload_file(tmp_path):
+    qr_path = tmp_path / "奇瑞二维码.txt"
+    cfg = StationConfig(
+        quantity_file=str(tmp_path / "数量.txt"),
+        final_box_file=str(tmp_path / "最终.txt"),
+        box_sequence_file=str(tmp_path / "序号.txt"),
+        laser_archive_dir=str(tmp_path / "archive"),
+        journal_file=str(tmp_path / "journal.json"),
+        session_file=str(tmp_path / "session.json"),
+        chery=CheryLabelConfig(
+            enabled=True,
+            part_no="30100351AA",
+            batch="18886-CT1520210711",
+            layers="4",
+            qr_payload_file=str(qr_path),
+            counters_file=str(tmp_path / "chery_counters.json"),
+        ),
+    )
+    (tmp_path / "序号.txt").write_text("3", encoding="utf-8")
+    store = LegacyStateStore(cfg)
+
+    class Repo:
+        def update_box_codes(self, box_code, products):
+            pass
+
+        def inspect_customer(self, code):
+            return InspectionResult(code, "customer", can_package=True, reason="ok")
+
+    class Printer:
+        def print_label(self):
+            pass
+
+    flow = PackagingWorkflow(Repo(), store, Printer())
+    flow.startup_check()
+    snapshots = [flow.process_customer_scan(f"CODE-{index:02d}") for index in range(PACKAGE_SIZE)]
+    assert snapshots[-1].box_completed is True
+    payload = qr_path.read_text(encoding=_text_encoding())
+    assert payload.startswith("10#30100351AA$ 11#8KN$ 17#6$")
+    assert "18#18886-CT1520210711$" in payload
+    assert "19#4$" in payload
+    assert "31#A0001$" in payload
+    assert payload.endswith("PK#ZX680540230$")
+    for index in range(PACKAGE_SIZE):
+        assert (tmp_path / f"装箱上线码{index}.txt").read_text(encoding=_text_encoding()) == f"CODE-{index:02d}"
+    assert (tmp_path / "数量.txt").read_text(encoding=_text_encoding()) == "12"
+
+    flow2 = PackagingWorkflow(Repo(), store, Printer())
+    flow2.startup_check()
+    for index in range(PACKAGE_SIZE):
+        flow2.process_customer_scan(f"NEXT-{index:02d}")
+    payload2 = qr_path.read_text(encoding=_text_encoding())
+    assert "31#A0002$" in payload2
+
+
+def test_config_loads_chery_label(tmp_path):
+    from python_app.config import load_config
+
+    cfg_file = tmp_path / "config.toml"
+    qr_file = (tmp_path / "qr.txt").as_posix()
+    cfg_file.write_text(
+        "[chery_label]\n"
+        "enabled = true\n"
+        'part_no = "301003630AA"\n'
+        'batch = "BATCH-1"\n'
+        'layers = "2"\n'
+        f'qr_payload_file = "{qr_file}"\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(cfg_file)
+    assert cfg.chery.enabled is True
+    assert cfg.chery.part_no == "301003630AA"
+    assert cfg.chery.batch == "BATCH-1"
+    assert cfg.chery.layers == "2"

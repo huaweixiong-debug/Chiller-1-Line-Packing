@@ -18,7 +18,7 @@ try:
     from PySide6.QtGui import QFont
     from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFormLayout,
                                    QFrame, QGridLayout, QHBoxLayout,
-                                   QLabel, QLineEdit, QMainWindow, QMessageBox,
+                                   QComboBox, QLabel, QLineEdit, QMainWindow, QMessageBox,
                                    QProgressBar, QPushButton, QVBoxLayout, QWidget)
 except ImportError:
     QApplication = None
@@ -276,6 +276,38 @@ if QApplication is not None:
             self.reset_button = QPushButton("复位本箱"); self.reset_button.clicked.connect(self._reset_box)
             control_row.addWidget(self.rework_toggle); control_row.addWidget(self.reset_button)
             left_layout.addLayout(control_row)
+            self.chery_part_combo = None
+            self.chery_batch_edit = None
+            self.chery_layers_edit = None
+            if self.config.chery.enabled:
+                from .chery_qr import PARTS
+                chery_box = QFrame()
+                chery_box.setObjectName("panel")
+                chery_form = QFormLayout(chery_box)
+                chery_form.setContentsMargins(8, 6, 8, 6)
+                chery_form.setSpacing(4)
+                title = QLabel("奇瑞 KD 标签（可选）")
+                title.setObjectName("sectionTitle")
+                chery_form.addRow(title)
+                self.chery_part_combo = QComboBox()
+                for part in PARTS:
+                    self.chery_part_combo.addItem(
+                        f"{part['part_no']} · {part['name']}", part["part_no"])
+                idx = self.chery_part_combo.findData(self.config.chery.part_no)
+                if idx >= 0:
+                    self.chery_part_combo.setCurrentIndex(idx)
+                self.chery_batch_edit = QLineEdit(self.config.chery.batch)
+                self.chery_batch_edit.setPlaceholderText("发运批次")
+                self.chery_layers_edit = QLineEdit(self.config.chery.layers)
+                self.chery_layers_edit.setPlaceholderText("码放层数")
+                chery_form.addRow("零件", self.chery_part_combo)
+                chery_form.addRow("发运批次", self.chery_batch_edit)
+                chery_form.addRow("码放层数", self.chery_layers_edit)
+                self.chery_part_combo.currentIndexChanged.connect(self._sync_chery_fields)
+                self.chery_batch_edit.textChanged.connect(self._sync_chery_fields)
+                self.chery_layers_edit.textChanged.connect(self._sync_chery_fields)
+                left_layout.addWidget(chery_box)
+                self._sync_chery_fields()
             body.addWidget(left, 0, 0)
 
             right = QFrame(); right.setObjectName("panel")
@@ -297,6 +329,15 @@ if QApplication is not None:
             edit = QLineEdit(); edit.setPlaceholderText(placeholder); edit.setReadOnly(read_only)
             if read_only: edit.setText(placeholder)
             return text, edit
+
+
+        def _sync_chery_fields(self, *_args) -> None:
+            if not self.config.chery.enabled:
+                return
+            part_no = self.chery_part_combo.currentData() if self.chery_part_combo else None
+            batch = self.chery_batch_edit.text() if self.chery_batch_edit else ""
+            layers = self.chery_layers_edit.text() if self.chery_layers_edit else ""
+            self.workflow.set_chery_fields(part_no=part_no, batch=batch, layers=layers)
 
         def _set_mode(self, mode: str) -> None:
             self._mode = mode

@@ -35,6 +35,9 @@ class PackagingWorkflow:
                  printer: LabelPrinter, on_update: Callable[[WorkflowSnapshot], None] | None = None):
         self.repository, self.store, self.printer = repository, store, printer
         self.on_update = on_update or (lambda snapshot: None)
+        self.chery_overrides: dict[str, str | None] = {
+            "part_no": None, "batch": None, "layers": None, "qty": None,
+        }
         self.state = WorkflowState.STARTUP_CHECK
         self.session: BoxSession | None = None
         self.last_result: InspectionResult | None = None
@@ -144,6 +147,25 @@ class PackagingWorkflow:
         self.state = WorkflowState.BOX_IN_PROGRESS
         return self._emit(f"第 {self.session.count}/12 件已加入当前箱：{laser_code}")
 
+
+    def set_chery_fields(
+        self,
+        *,
+        part_no: str | None = None,
+        batch: str | None = None,
+        layers: str | None = None,
+        qty: str | None = None,
+    ) -> None:
+        """界面或外部设置奇瑞标签字段；None 表示沿用配置默认值。"""
+        if part_no is not None:
+            self.chery_overrides["part_no"] = part_no
+        if batch is not None:
+            self.chery_overrides["batch"] = batch
+        if layers is not None:
+            self.chery_overrides["layers"] = layers
+        if qty is not None:
+            self.chery_overrides["qty"] = qty
+
     def finalize_box(self) -> WorkflowSnapshot:
         if self.session is None or not self.session.complete:
             raise WorkflowError("当前箱尚未达到设定数量")
@@ -160,6 +182,15 @@ class PackagingWorkflow:
             self.store.advance_box_sequence()
             journal.phase = "FILES_READY"
             self.store.save_journal(journal)
+            chery_cfg = getattr(getattr(self.store, "config", None), "chery", None)
+            if chery_cfg is not None and chery_cfg.enabled:
+                payload = self.store.write_chery_label_files(
+                    part_no=self.chery_overrides.get("part_no"),
+                    batch=self.chery_overrides.get("batch"),
+                    layers=self.chery_overrides.get("layers"),
+                    qty=self.chery_overrides.get("qty"),
+                )
+                log.info("奇瑞二维码已写入 %s: %s", chery_cfg.qr_payload_file, payload)
             self.repository.update_box_codes(box.box_code, box.products)
             journal.phase = "DB_UPDATED"
             self.store.save_journal(journal)

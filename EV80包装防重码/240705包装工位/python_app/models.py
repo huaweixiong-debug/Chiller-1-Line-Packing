@@ -38,6 +38,19 @@ class CheckSwitches:
     duplicate: bool = True
 
 
+
+@dataclass
+class CheryLabelConfig:
+    """可选奇瑞 KD 标签二维码；默认关闭，不影响现有 BarTender 上线码文件。"""
+    enabled: bool = False
+    part_no: str = "30100351AA"
+    batch: str = ""
+    layers: str = ""
+    qty_override: str = ""  # 空则用零件表默认包装数量
+    qr_payload_file: str = r"D:\奇瑞二维码.txt"
+    counters_file: str = r"%ProgramData%\PackagingStation\chery_counters.json"
+
+
 @dataclass
 class StationConfig:
     db_host: str = "192.168.3.100"
@@ -66,6 +79,7 @@ class StationConfig:
     journal_file: str = r"%ProgramData%\PackagingStation\box_journal.json"
     session_file: str = r"%ProgramData%\PackagingStation\box_session.json"
     station_name: str = "包装工位"
+    chery: CheryLabelConfig = field(default_factory=CheryLabelConfig)
     admin_username: str = "admin"
     admin_password: str = "admin123"
     columns: ColumnMap = field(default_factory=ColumnMap)
