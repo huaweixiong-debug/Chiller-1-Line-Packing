@@ -72,7 +72,7 @@ if QApplication is not None:
             super().__init__()
             self.number = number
             self.product_code = ""
-            self.setMinimumHeight(26)
+            self.setMinimumHeight(24)
             layout = QHBoxLayout(self)
             layout.setContentsMargins(10, 1, 10, 1)
             self.number_label = QLabel(f"{number:02d}")
@@ -253,7 +253,7 @@ if QApplication is not None:
             body.setSpacing(12)
             layout.addLayout(body, 1)
             left = QFrame(); left.setObjectName("panel")
-            left_layout = QVBoxLayout(left); left_layout.setContentsMargins(10, 8, 10, 8); left_layout.setSpacing(6)
+            left_layout = QVBoxLayout(left); left_layout.setContentsMargins(10, 8, 10, 8); left_layout.setSpacing(5)
             self.status = QLabel("系统启动中"); self.status.setObjectName("status"); self.status.setAlignment(Qt.AlignCenter); self.status.setWordWrap(True)
             left_layout.addWidget(self.status)
             self.status_lamps = {}
@@ -280,6 +280,16 @@ if QApplication is not None:
             self.reset_button = QPushButton("复位本箱"); self.reset_button.clicked.connect(self._reset_box)
             control_row.addWidget(self.retry); control_row.addWidget(self.rework_toggle); control_row.addWidget(self.reset_button)
             left_layout.addLayout(control_row)
+            body.addWidget(left, 0, 0)
+
+            right = QFrame(); right.setObjectName("panel")
+            right_layout = QVBoxLayout(right); right_layout.setContentsMargins(8, 8, 8, 8); right_layout.setSpacing(4)
+            right_layout.addWidget(QLabel("装箱产品（固定 12 件）"))
+            self.product_slots = [ProductSlot(index + 1) for index in range(PACKAGE_SIZE)]
+            for slot, (row, column) in zip(self.product_slots, slot_grid_positions()):
+                right_layout.addWidget(slot)
+            body.addWidget(right, 0, 1)
+            body.setColumnStretch(0, 4); body.setColumnStretch(1, 5)
             self.chery_part_combo = None
             self.chery_batch_edit = None
             self.chery_layers_edit = None
@@ -288,7 +298,7 @@ if QApplication is not None:
                 chery_box = QFrame()
                 chery_box.setObjectName("panel")
                 chery_row = QHBoxLayout(chery_box)
-                chery_row.setContentsMargins(8, 4, 8, 4)
+                chery_row.setContentsMargins(8, 2, 8, 2)
                 chery_row.setSpacing(6)
                 chery_title = QLabel("奇瑞 KD")
                 chery_title.setObjectName("sectionTitle")
@@ -300,30 +310,29 @@ if QApplication is not None:
                 idx = self.chery_part_combo.findData(self.config.chery.part_no)
                 if idx >= 0:
                     self.chery_part_combo.setCurrentIndex(idx)
-                chery_row.addWidget(self.chery_part_combo, 2)
+                chery_row.addWidget(self.chery_part_combo)
                 self.chery_batch_edit = QLineEdit(self.config.chery.batch)
                 self.chery_batch_edit.setPlaceholderText("发运批次")
                 chery_row.addWidget(QLabel("批次"))
-                chery_row.addWidget(self.chery_batch_edit, 2)
+                chery_row.addWidget(self.chery_batch_edit)
                 self.chery_layers_edit = QLineEdit(self.config.chery.layers)
                 self.chery_layers_edit.setPlaceholderText("层数")
                 chery_row.addWidget(QLabel("层数"))
-                chery_row.addWidget(self.chery_layers_edit, 1)
+                chery_row.addWidget(self.chery_layers_edit)
+                chery_row.addStretch(1)
+                self.chery_batch_edit.ensurePolished()
+                metrics = self.chery_batch_edit.fontMetrics()
+                char_width = metrics.horizontalAdvance("0")
+                self.chery_part_combo.setFixedWidth(char_width * 12 + 30)
+                self.chery_batch_edit.setFixedWidth(char_width * 16 + 24)
+                self.chery_layers_edit.setFixedWidth(char_width * 5 + 18)
+                self.chery_part_combo.setToolTip("奇瑞 KD 零件号（决定二维码载荷）")
+                self.chery_batch_edit.setToolTip("发运批次（手动输入，按 16 字符宽度）")
                 self.chery_part_combo.currentIndexChanged.connect(self._sync_chery_fields)
                 self.chery_batch_edit.textChanged.connect(self._sync_chery_fields)
                 self.chery_layers_edit.textChanged.connect(self._sync_chery_fields)
-                left_layout.addWidget(chery_box)
+                layout.addWidget(chery_box)
                 self._sync_chery_fields()
-            body.addWidget(left, 0, 0)
-
-            right = QFrame(); right.setObjectName("panel")
-            right_layout = QVBoxLayout(right); right_layout.setContentsMargins(8, 8, 8, 8); right_layout.setSpacing(4)
-            right_layout.addWidget(QLabel("装箱产品（固定 12 件）"))
-            self.product_slots = [ProductSlot(index + 1) for index in range(PACKAGE_SIZE)]
-            for slot, (row, column) in zip(self.product_slots, slot_grid_positions()):
-                right_layout.addWidget(slot)
-            body.addWidget(right, 0, 1)
-            body.setColumnStretch(0, 4); body.setColumnStretch(1, 5)
             self.log_label = QLabel("状态：系统启动")
             layout.addWidget(self.log_label)
             self._set_alert("normal", "扫码状态正常")
