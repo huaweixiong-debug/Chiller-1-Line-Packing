@@ -1,0 +1,4 @@
+PySide6-Essentials>=6.8,<7
+PyMySQL>=1.1,<2
+pyinstaller>=6.0,<7
+pytest>=8,<9

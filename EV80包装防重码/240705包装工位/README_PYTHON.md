@@ -1,0 +1,31 @@
+# Python 包装工位
+
+这是原 LabVIEW 包装工位的 Python 迁移实现。原 `.vi` 文件保持不变，仅新增 `python_app/`。
+
+当前生产规则固定每箱 12 件，界面提供 12 个产品格。数据库历史重码或当前箱内重码会立即停止扫码，必须在屏幕上人工确认后才能继续；旧 `D:\数量.txt` 保留但不再读取。
+
+## 开发运行
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ".\运行包装工位.ps1"
+```
+
+启动脚本会把 Python 程序同步到 `%LOCALAPPDATA%\PackagingStation\runtime` 后运行，避免直接从 `U:` 网络盘导入模块导致长时间无界面。首次启动会自动安装缺失依赖。
+
+远程电脑必须先安装 Python 3.12/3.13/3.14 x64，并确认下面命令能显示真实安装路径；`C:\Windows\System32\WindowsApps\python.exe` 只是系统占位别名，不能使用。
+
+```powershell
+where.exe python
+py -3.12 --version
+```
+
+正式运行前，将 `python_app/config.example.toml` 复制为 `%ProgramData%\PackagingStation\config.toml`，通过 `PACKAGING_DB_PASSWORD` 提供数据库密码，并在目标现场电脑核对 BarTender、标签模板和 D 盘状态文件。
+
+## 测试与打包
+
+```powershell
+pytest -q
+pyinstaller --noconfirm --clean --onedir --windowed --name PackagingStation python_app/__main__.py
+```
+
+首次现场切换必须先执行只读预检、备份原 VI/标签/状态文件并人工确认；数据库、扫码器或打印机异常时程序会阻止包装。

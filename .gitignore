@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# PyInstaller 构建产物
+build/
+dist/
+
+# 数据文件（体积大，不入库）
+ev80 06(1).xls
+
+# 打包配置
+python_app$f

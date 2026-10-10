@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
+    tomllib = None
+
+from .models import StationConfig
+
+
+def _expand(value: str) -> str:
+    return os.path.expandvars(os.path.expanduser(value))
+
+
+def load_config(path: str | os.PathLike[str] | None = None) -> StationConfig:
+    cfg = StationConfig()
+    config_path = Path(_expand(str(path or "%ProgramData%\\PackagingStation\\config.toml")))
+    if not config_path.exists() or tomllib is None:
+        return cfg
+    with config_path.open("rb") as handle:
+        raw = tomllib.load(handle)
+    db = raw.get("database", {})
+    scanner = raw.get("scanner", {})
+    paths = raw.get("paths", {})
+    app = raw.get("app", {})
+    for name, value in db.items():
+        if hasattr(cfg, f"db_{name}"):
+            setattr(cfg, f"db_{name}", value)
+    for name, value in scanner.items():
+        if hasattr(cfg, f"scanner_{name}") or hasattr(cfg, name):
+            setattr(cfg, f"scanner_{name}" if hasattr(cfg, f"scanner_{name}") else name, value)
+    mapping = {
+        "bartend_exe": "bartend_exe", "label_template": "label_template",
+        "quantity_file": "quantity_file", "final_box_file": "final_box_file",
+        "box_sequence_file": "box_sequence_file", "laser_archive_dir": "laser_archive_dir",
+        "journal_file": "journal_file",
+    }
+    for source, target in mapping.items():
+        if source in paths:
+            setattr(cfg, target, _expand(str(paths[source])))
+    if "station_name" in app:
+        cfg.station_name = str(app["station_name"])
+    admin = raw.get("admin", {})
+    if "username" in admin:
+        cfg.admin_username = str(admin["username"])
+    if "password" in admin:
+        cfg.admin_password = str(admin["password"])
+    if "db_password_env" in db:
+        cfg.db_password = os.environ.get(str(db["db_password_env"]), cfg.db_password)
+    return cfg

@@ -1,0 +1,22 @@
+[database]
+host = "192.168.3.140"
+port = 3306
+user = "root"
+name = "test"
+password_env = "PACKAGING_DB_PASSWORD"
+
+[scanner]
+host = "192.168.3.69"
+port = 9004
+timeout = 5.0
+
+[paths]
+bartend_exe = "C:/Program Files/Seagull/BarTender Suite/bartend.exe"
+label_template = "D:/Label.btw"
+final_box_file = "D:/最终装箱码.txt"
+box_sequence_file = "D:/箱码.txt"
+laser_archive_dir = "D:/装箱激光码"
+journal_file = "%ProgramData%/PackagingStation/box_journal.json"
+
+[app]
+station_name = "包装工位"
